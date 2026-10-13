@@ -1,0 +1,355 @@
+@import "tailwindcss";
+
+/* ============================================================================
+   GTHubX — Global Traders HubX design system.
+   Brand: Deep Navy #0B1220 · Gold #D4A72C · Emerald #18A66A · White · Light Gray #F3F5F7
+   Personality: professional, global, premium fintech community — NOT a forex broker.
+
+   NOTE: the @theme block below is the SINGLE re-skin point. Utility/token names
+   use the `brand` prefix (gold) + `emerald` (growth/positive).
+   ========================================================================= */
+
+@theme {
+  /* Surfaces */
+  --color-background: #0b1220;
+  --color-surface: #0f1729;
+  --color-card: #121b2f;
+  --color-elevated: #17233c;
+  --color-border: rgba(148, 163, 184, 0.14);
+  --color-border-strong: rgba(212, 167, 44, 0.34);
+
+  /* Text */
+  --color-foreground: #f8fafc;
+  --color-muted: #94a3b8;
+  --color-faint: #64748b;
+
+  /* Brand — gold */
+  --color-brand: #d4a72c;
+  --color-brand-bright: #e8c766;
+  --color-brand-dark: #a87f1e;
+  --color-brand-soft: #f3e2a8;
+
+  /* Accent — emerald (growth / positive performance) */
+  --color-emerald: #18a66a;
+  --color-emerald-bright: #2fd18c;
+
+  /* Status */
+  --color-success: #18a66a;
+  --color-warning: #e8c766;
+  --color-danger: #ef5a5a;
+
+  /* Type */
+  --font-sans: var(--font-manrope), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-display: var(--font-sora), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono-code), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  /* Radii */
+  --radius-lg: 0.625rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+  --radius-3xl: 1.5rem;
+
+  /* Motion */
+  --animate-fade-up: fade-up 0.6s ease-out both;
+  --animate-marquee: marquee 44s linear infinite;
+  --animate-pulse-brand: pulse-brand 3.2s ease-in-out infinite;
+  --animate-float: float 6s ease-in-out infinite;
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes pulse-brand {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+/* ---------------------------------------------------------------- base ---- */
+
+:root {
+  color-scheme: dark;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: rgba(212, 167, 44, 0.28);
+  color: #fff;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #0b1220;
+}
+::-webkit-scrollbar-thumb {
+  background: #1e2c46;
+  border-radius: 999px;
+  border: 2px solid #0b1220;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #2a3d5e;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ------------------------------------------------------------- helpers ---- */
+
+/* Gradient text: white → soft gold → gold */
+.text-gradient-brand {
+  background: linear-gradient(135deg, #ffffff 0%, #e8c766 55%, #d4a72c 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+.text-gradient-plain {
+  background: linear-gradient(180deg, #ffffff 0%, #cbd5e1 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+}
+
+/* Brand primary gradient surface (gold) */
+.bg-brand-gradient {
+  background-image: linear-gradient(135deg, #e8c766 0%, #d4a72c 48%, #a87f1e 100%);
+}
+
+.border-brand-gradient {
+  border: 1px solid transparent;
+  background:
+    linear-gradient(var(--color-card), var(--color-card)) padding-box,
+    linear-gradient(135deg, rgba(232, 199, 102, 0.55), rgba(24, 166, 106, 0.2)) border-box;
+}
+
+/* Ambient radial glow */
+.glow-brand {
+  position: relative;
+}
+.glow-brand::before {
+  content: "";
+  position: absolute;
+  inset: -40% -10% auto -10%;
+  height: 440px;
+  background: radial-gradient(ellipse at center, rgba(212, 167, 44, 0.16) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: -1;
+}
+
+.card {
+  background: linear-gradient(160deg, #131d33 0%, #0f1729 100%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-2xl);
+}
+
+.card-hover {
+  transition:
+    transform 0.25s ease,
+    border-color 0.25s ease,
+    box-shadow 0.25s ease;
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  border-color: rgba(212, 167, 44, 0.42);
+  box-shadow: 0 18px 44px -22px rgba(212, 167, 44, 0.4);
+}
+
+.glass {
+  background: rgba(15, 23, 41, 0.72);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+/* Fixed site header — glassy once scrolled (class toggled on the DOM node). */
+.site-header {
+  border-bottom: 1px solid transparent;
+  transition:
+    background-color 0.3s ease,
+    border-color 0.3s ease,
+    backdrop-filter 0.3s ease;
+}
+.site-header.is-scrolled {
+  background: rgba(11, 18, 32, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom-color: var(--color-border);
+}
+
+/* Hairline brand divider */
+.divider-brand {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(212, 167, 44, 0.5), transparent);
+}
+
+/* --------------------------------------------------- scroll reveal -------- */
+
+.reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  transition:
+    opacity 0.7s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.7s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* --------------------------------------------------- reduced motion ------- */
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  .reveal {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+  .card-hover:hover {
+    transform: none;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ------------------------------------------------------- utilities -------- */
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.grid-lines {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 48px 48px;
+}
+
+/* --------------------------------------------------- CMS prose (markdown) -- */
+
+.prose-gt {
+  color: var(--color-muted);
+  line-height: 1.75;
+}
+.prose-gt h1,
+.prose-gt h2,
+.prose-gt h3 {
+  font-family: var(--font-display);
+  color: var(--color-foreground);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  scroll-margin-top: 6rem;
+}
+.prose-gt h1 {
+  font-size: 1.875rem;
+  margin: 0 0 1.25rem;
+}
+.prose-gt h2 {
+  font-size: 1.5rem;
+  margin: 2.25rem 0 1rem;
+}
+.prose-gt h3 {
+  font-size: 1.125rem;
+  margin: 1.75rem 0 0.75rem;
+}
+.prose-gt p {
+  margin: 0 0 1.15rem;
+  font-size: 0.975rem;
+}
+.prose-gt ul {
+  margin: 0 0 1.15rem 1.25rem;
+  list-style: disc;
+}
+.prose-gt li {
+  margin: 0.35rem 0;
+  font-size: 0.975rem;
+}
+.prose-gt strong {
+  color: var(--color-foreground);
+  font-weight: 600;
+}
+.prose-gt em {
+  color: var(--color-faint);
+}
+.prose-gt a {
+  color: var(--color-brand);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.prose-gt code {
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  background: var(--color-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 0.1em 0.4em;
+}
+.prose-gt > :first-child {
+  margin-top: 0;
+}
