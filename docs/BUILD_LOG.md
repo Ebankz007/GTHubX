@@ -11,7 +11,7 @@
 | **2. Database + engine** | Prisma schema · migration · seed · port Aglotrends engine · integer-cents money | ✅ 2026-10-14 |
 | **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ✅ 2026-10-14 |
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
-| **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team + role editor landed; KYC/content/finance/reports pending |
+| **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings landed; KYC (needs Henry), content, finance, reports pending |
 | **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ⬜ |
 | **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | ⬜ |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
@@ -353,9 +353,43 @@ the audit page (end-to-end, no SQL).
    now frees the port with `Stop-Process`, **verifies it is free or aborts**, and re-frees
    it on shutdown.
 
+## Phase 5b — site settings (2026-10-14)
+
+**Landed**
+- `lib/site-settings.ts` — allowlist + editor shapes for the four seeded keys
+  (`site.identity`, `site.contact`, `site.compliance`, `site.social`).
+- `PATCH /api/admin/settings/[key]` — three independent gates (admin · `settings`
+  permission · allowlisted key). An unknown key is a **404, not a write**; a
+  non-object value and an oversized payload are 400s.
+- `app/admin/(protected)/settings/page.tsx` + `components/admin/settings-form.tsx` —
+  `fields` mode for known string properties, `json` mode for `site.social`.
+  `fields` mode starts from the live value so it never wipes keys it does not render;
+  `json` mode refuses to save invalid JSON rather than silently dropping it.
+- Nav: Settings → `/admin/settings`, permission `settings` (SUPER_ADMIN only).
+
+**Why fail-closed.** Arbitrary-key writes would let an admin create settings nothing
+reads and would make the audit trail undiffable. A missing allowlisted key refuses to
+save instead of inventing a record the site does not expect — the page says to re-seed.
+`site.compliance` holds the risk and custody disclosures, so every save is
+superadmin-only and audit-logged with before/after.
+
+**Verification**
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test` | ✅ **121/121 green** |
+| Live smoke (cold start + verified clean shutdown) | ✅ **48/48** |
+
+Settings coverage: superadmin reaches `/admin/settings`, `SUPPORT_ADMIN` is 307'd, a
+valid save returns 200, unknown key 404, non-object value 400, missing permission 403,
+**the saved value round-trips into the rendered form**, and the change appears on the
+audit page.
+
 ## Next — Phase 5b
-1. Ops: KYC review, deposits/withdrawals/ledger (finance), network view, community moderation.
-2. Content: blog, FAQ, media, messages; site settings.
-3. Superadmin: reports.
-4. Seed business content once Henry supplies it (packages, brokers, testimonials).
+1. **KYC review** — blocked on Henry: there is no intake path yet (the member page
+   deliberately defers to Phase 7 adapters), and KYC is regulatory-adjacent, so document
+   requirements and PII handling are his call, not something to invent.
+2. Ops: deposits/withdrawals review (needs Phase 7 payment adapters to have rows).
+3. Content: blog, FAQ, media, messages — needs Henry's copy.
+4. Superadmin: reports.
 5. Wallet / network / copy trading unblock with Phase 6's engine.
