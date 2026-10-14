@@ -134,6 +134,31 @@ export const adminLoginSchema = loginSchema;
 
 export type AdminLoginInput = z.infer<typeof adminLoginSchema>;
 
+/** The `AdminRole` enum, mirrored for schema validation. */
+export const ADMIN_ROLES = [
+  "SUPER_ADMIN",
+  "CONTENT_ADMIN",
+  "SUPPORT_ADMIN",
+  "FINANCE_ADMIN",
+  "NETWORK_ADMIN",
+  "TRADER_ADMIN",
+] as const;
+
+/**
+ * Superadmin edit of an admin account: change the role, suspend/restore access,
+ * or both. Rejects an empty patch rather than writing a no-op audit entry.
+ */
+export const updateAdminSchema = z
+  .object({
+    role: z.enum(ADMIN_ROLES).optional(),
+    isActive: z.boolean().optional(),
+  })
+  .refine((v) => v.role !== undefined || v.isActive !== undefined, {
+    message: "Nothing to update",
+  });
+
+export type UpdateAdminInput = z.infer<typeof updateAdminSchema>;
+
 /** First human-readable message from a Zod error. */
 export function firstError(error: z.ZodError): string {
   return error.issues[0]?.message ?? "Invalid input";

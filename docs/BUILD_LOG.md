@@ -11,7 +11,7 @@
 | **2. Database + engine** | Prisma schema · migration · seed · port Aglotrends engine · integer-cents money | ✅ 2026-10-14 |
 | **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ✅ 2026-10-14 |
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
-| **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — foundation landed (auth, RBAC gate, dashboard/users/audit); KYC/content/finance/roles pending |
+| **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team + role editor landed; KYC/content/finance/reports pending |
 | **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ⬜ |
 | **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | ⬜ |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
@@ -308,9 +308,54 @@ listener answers instantly and makes a cold boot look instant).
 **Seeded for the smoke (dev DB only):** `admin@smoke.local` (SUPER_ADMIN),
 `support-admin@smoke.local` (SUPPORT_ADMIN).
 
+## Phase 5b — superadmin team management (2026-10-14)
+
+**Landed**
+- `PATCH /api/admin/team/[id]` — change an admin's role and/or suspend/restore access.
+  Route re-checks `hasPermission(role, "team")` on its own: the page guard is a
+  convenience, not a boundary.
+- `updateAdminSchema` + `ADMIN_ROLES` in `lib/validators.ts` — rejects an empty patch
+  rather than writing a meaningless audit entry.
+- `app/admin/(protected)/team/page.tsx` — admin accounts, active-superadmin count, a
+  warning card when only one active SUPER_ADMIN remains, per-row permissions count.
+- `components/admin/team-actions.tsx` — role select + suspend/restore; **your own row is
+  read-only in the UI and refused again by the API** (blocked at both layers, not one).
+- Nav: Team → `/admin/team`, permission `team` (**SUPER_ADMIN only**).
+
+**Lockouts enforced server-side:** editing your own role, deactivating yourself, empty
+patch → 400; unknown id → 404. Deactivation needs no session revocation — `getCurrentAdmin`
+refuses inactive admins, so a live cookie goes inert on the next request.
+
+**Honest note on the "last SUPER_ADMIN" guard:** it is written but **unreachable today**.
+Only SUPER_ADMIN holds `team`, and `getCurrentAdmin` only returns active admins, so an
+actor editing anyone else always leaves at least themselves standing. Kept because it
+becomes load-bearing the moment a non-superadmin role is granted `team` — flagged in the
+source comment rather than sold as protection.
+
+**Verification**
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test` | ✅ **121/121 green** |
+| Live smoke (cold start + verified clean shutdown) | ✅ **40/40** |
+
+Smoke coverage beyond Phase 5a: a **fresh CONTENT_ADMIN is created per run** (unique email,
+via `pnpm db:seed:admin`), proved blocked from `/admin/team`, `/admin/users` and `/admin/audit`,
+then promoted to SUPER_ADMIN and proved unblocked **on the next request** — permission
+change observed live, no DB reset, fully re-runnable. Plus all four lockout refusals, a
+re-login confirming the refused self-edit mutated nothing, and the promotion appearing on
+the audit page (end-to-end, no SQL).
+
+**Two harness bugs fixed alongside** (both would have produced false signal):
+1. `pnpm db:seed:admin` inherited the shell's cwd and died with
+   `ERR_PNPM_NO_IMPORTER_MANIFEST_FOUND` — now wrapped in `Push-Location $root`.
+2. Stale listeners survived `taskkill /PID` and served results from old code. The script
+   now frees the port with `Stop-Process`, **verifies it is free or aborts**, and re-frees
+   it on shutdown.
+
 ## Next — Phase 5b
-1. Superadmin: admin accounts list + role editor, site settings, integrations, reports.
-2. Ops: KYC review, deposits/withdrawals/ledger (finance), network view, community moderation.
-3. Content: blog, FAQ, media, messages.
+1. Ops: KYC review, deposits/withdrawals/ledger (finance), network view, community moderation.
+2. Content: blog, FAQ, media, messages; site settings.
+3. Superadmin: reports.
 4. Seed business content once Henry supplies it (packages, brokers, testimonials).
 5. Wallet / network / copy trading unblock with Phase 6's engine.
