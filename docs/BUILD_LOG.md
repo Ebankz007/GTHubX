@@ -11,7 +11,7 @@
 | **2. Database + engine** | Prisma schema · migration · seed · port Aglotrends engine · integer-cents money | ✅ 2026-10-14 |
 | **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ✅ 2026-10-14 |
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
-| **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | ⬜ |
+| **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — foundation landed (auth, RBAC gate, dashboard/users/audit); KYC/content/finance/roles pending |
 | **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ⬜ |
 | **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | ⬜ |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
@@ -259,8 +259,58 @@ that branch runs.
 - **Network** — `Referral` / `MatrixPosition` are engine-owned, created in Phase 6.
 - **Packages / copy trading** — blocked on Henry's package tiers, broker list and trader list.
 
-## Next — Phase 5 (admin + superadmin)
-1. Ops admin: users, KYC, packages, copy, network, community moderation, content.
-2. Superadmin: admins, roles, settings, integrations, audit, reports.
-3. Seed business content once Henry supplies it (packages, brokers, testimonials).
-4. Wallet / network / copy trading unblock with Phase 6's engine.
+## Phase 5a — admin foundation (2026-10-14)
+
+**Landed**
+- `lib/validators.ts` — `adminLoginSchema` (reuses `loginSchema`), `AdminLoginInput`.
+- `lib/rate-limit.ts` — `adminLogin` 5 / 15 min, `resetRateLimit` on success.
+- `POST /api/admin/login` — timing-equalised, `createAdminSession` + `setAdminSessionCookie`,
+  `lastLoginAt`, 401 for bad credentials, 403 for inactive, 429 on throttle.
+- `POST /api/admin/logout` — `logoutAdmin()`.
+- `prisma/seed-admin.ts` + `pnpm db:seed:admin` — idempotent admin bootstrap.
+  Credentials from `ADMIN_EMAIL`/`ADMIN_NAME`/`ADMIN_ROLE`/`ADMIN_PASSWORD`; if the
+  password is absent a strong one is generated and printed **once**. An existing email
+  is never touched, so re-running cannot lock anyone out. Relative imports + explicit
+  `PrismaPg` adapter, matching `prisma/seed.ts` (`@/` aliases do not resolve under tsx).
+- `components/admin/{nav-items.ts,shell.tsx,login-form.tsx}` — chrome with role-filtered nav.
+- `app/admin/login/page.tsx` — deliberately outside `(protected)` so it is not guarded.
+- `app/admin/(protected)/layout.tsx` — calls `requireAdmin()`, renders `AdminShell`.
+  **Auth is enforced once, here**, so no child page can forget it.
+- `app/admin/(protected)/page.tsx` — dashboard, real counts (members by status, KYC in
+  review, open tickets, active admins) + newest-members table. Guard: `requireAdminPermission("dashboard")`.
+- `app/admin/(protected)/users/page.tsx` — paginated member list, search by name/email.
+  Guard: `requireAdminPermission("users")`.
+- `app/admin/(protected)/audit/page.tsx` — read-only `AuditLog` reader, admin + system actors.
+  Guard: `requireAdminPermission("audit")`.
+
+**Guard model.** Nav filtering is a courtesy; **the page guard is the gate**. Each page
+calls `requireAdminPermission`, and `permissionForAdminPath` fails closed — an unknown
+path yields `null`, so a new route can never accidentally ship wide open. Roles were
+exercised live, not assumed: `SUPPORT_ADMIN` opens `/admin` and `/admin/users` but is
+307'd off `/admin/audit`, and its nav hides the Audit link it cannot reach.
+
+**Harness bug found (not an app bug).** First smoke reported 5 failures of the form
+"expected 307, got 200." The server was returning the correct `307 location: /admin/login`
+all along — PowerShell 5.1's `Invoke-WebRequest -MaximumRedirection 0` silently follows
+the redirect and hands back the final 200. Every guard therefore *looked* like a
+pass-through. **Smoke now runs on `curl.exe --max-redirs 0` with cookie jars**, and gates
+app readiness on a rendered `GET / == 200` rather than on a bare listening socket (a stale
+listener answers instantly and makes a cold boot look instant).
+
+**Verification**
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test` | ✅ **121/121 green** |
+| `pnpm db:seed:admin` ×2 | ✅ creates, then reports "already exists" without resetting |
+| Live smoke (cold start, port provably free) | ✅ **25/25** — anon gate, bad/unknown creds 401, SUPER_ADMIN full access, SUPPORT_ADMIN partial access + 307 on `/admin/audit`, nav filtering both directions, admin↔member session isolation, member creds rejected by admin login, logout re-gates |
+
+**Seeded for the smoke (dev DB only):** `admin@smoke.local` (SUPER_ADMIN),
+`support-admin@smoke.local` (SUPPORT_ADMIN).
+
+## Next — Phase 5b
+1. Superadmin: admin accounts list + role editor, site settings, integrations, reports.
+2. Ops: KYC review, deposits/withdrawals/ledger (finance), network view, community moderation.
+3. Content: blog, FAQ, media, messages.
+4. Seed business content once Henry supplies it (packages, brokers, testimonials).
+5. Wallet / network / copy trading unblock with Phase 6's engine.

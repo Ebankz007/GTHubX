@@ -124,6 +124,16 @@ export type CreateMessageInput = z.infer<typeof createMessageSchema>;
 export type CreatePostInput = z.infer<typeof createPostSchema>;
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
 
+/* --------------------------------------------------------------- admin ------ */
+
+/**
+ * Admin sign-in. Same shape as `loginSchema` — a different schema would only
+ * exist to be maintained twice. The route decides which table to consult.
+ */
+export const adminLoginSchema = loginSchema;
+
+export type AdminLoginInput = z.infer<typeof adminLoginSchema>;
+
 /** First human-readable message from a Zod error. */
 export function firstError(error: z.ZodError): string {
   return error.issues[0]?.message ?? "Invalid input";
