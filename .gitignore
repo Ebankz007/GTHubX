@@ -11,6 +11,9 @@ next-env.d.ts
 # production
 /build
 
+# prisma generated client
+/lib/generated/
+
 # runtime / uploads
 /public/uploads/*
 !/public/uploads/.gitkeep

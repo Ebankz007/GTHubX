@@ -1,0 +1,1227 @@
+// GTHubX — Prisma schema (PostgreSQL)
+// Global Traders HubX. Phase 2. Posture: Decision A — NO CUSTODY.
+//
+// MONEY RULE — non-negotiable: every monetary value is an integer number of
+// MINOR UNITS (cents), stored as `Int`. Never `Float`; never a fractional
+// `Decimal`. This matches the ported compensation engine (`lib/engine`), which
+// is integer-cents throughout, so no conversion or rounding happens at the DB
+// boundary. `currency` accompanies every amount. (Fixes the CopiPilot `Float` flag.)
+//
+// NO-CUSTODY RULE: the platform never holds client funds. Packages are
+// participation tiers, not return-bearing products — there are deliberately NO
+// interest/return/APY fields anywhere. Copying is manual on the client's own
+// broker account. Referral rewards derive from product revenue only.
+//
+// Docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/* ------------------------------------------------------------------ enums */
+
+enum AdminRole {
+  SUPER_ADMIN
+  CONTENT_ADMIN
+  SUPPORT_ADMIN
+  FINANCE_ADMIN
+  NETWORK_ADMIN
+  TRADER_ADMIN
+}
+
+enum UserRole {
+  CLIENT
+  TRADER
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+}
+
+enum KycStatus {
+  NOT_STARTED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum SessionPurpose {
+  SESSION
+  TWO_FACTOR_CHALLENGE
+  EMAIL_VERIFY
+  PASSWORD_RESET
+}
+
+enum ContentStatus {
+  DRAFT
+  SCHEDULED
+  PUBLISHED
+}
+
+enum NavLocation {
+  HEADER
+  FOOTER
+}
+
+enum MessageStatus {
+  NEW
+  READ
+  REPLIED
+  ARCHIVED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TraderStatus {
+  ACTIVE
+  INACTIVE
+  COMING_SOON
+}
+
+enum PackageStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum SubscriptionStatus {
+  PENDING
+  ACTIVE
+  CANCELLED
+  COMPLETED
+}
+
+enum BrokerAccountStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum CopyStatus {
+  PENDING
+  ACTIVE
+  PAUSED
+  STOPPED
+}
+
+enum RankKind {
+  ASSOCIATE
+  LEADERSHIP
+}
+
+enum RankAwardStatus {
+  PENDING
+  APPROVED
+  PAID
+  FLAGGED
+  REJECTED
+}
+
+enum CommissionType {
+  DIRECT_REFERRAL_BONUS
+  GENERATION_BONUS
+  RANK_MILESTONE
+  SPONSOR_OVERRIDE
+  TRADING_PROFIT_RETAINED
+  ADJUSTMENT
+}
+
+enum CommissionStatus {
+  PENDING
+  APPROVED
+  PAID
+  FLAGGED
+  REJECTED
+}
+
+enum PoolKind {
+  RANK
+  LEADERSHIP
+}
+
+enum PoolEntryType {
+  ACCRUAL
+  PAYOUT
+}
+
+enum PayoutStatus {
+  REQUESTED
+  APPROVED
+  REJECTED
+  PAID
+}
+
+enum PayoutMethod {
+  BANK_TRANSFER
+  CRYPTO
+  WALLET
+  OTHER
+}
+
+enum LedgerDirection {
+  CREDIT
+  DEBIT
+}
+
+enum TransactionType {
+  DEPOSIT
+  WITHDRAWAL
+  COMMISSION
+  FEE
+  REFUND
+  ADJUSTMENT
+  SUBSCRIPTION
+}
+
+enum TransactionStatus {
+  PENDING
+  APPROVED
+  COMPLETED
+  REJECTED
+  FAILED
+}
+
+enum PaymentPurpose {
+  REGISTRATION
+  DEPOSIT
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  EXPIRED
+  FAILED
+}
+
+enum PlatformFeeStatus {
+  PENDING
+  SETTLED
+}
+
+enum SettlementStatus {
+  RECORDED
+  DISTRIBUTED
+}
+
+enum NotificationType {
+  SYSTEM
+  ACCOUNT
+  COMMISSION
+  PAYMENT
+  SECURITY
+  COMMUNITY
+}
+
+enum NotificationChannel {
+  IN_APP
+  EMAIL
+  WHATSAPP
+  TELEGRAM
+}
+
+enum PostStatus {
+  PUBLISHED
+  HIDDEN
+  REMOVED
+}
+
+enum EventRegistrationStatus {
+  GOING
+  CANCELLED
+}
+
+enum SupportTicketStatus {
+  OPEN
+  PENDING
+  RESOLVED
+  CLOSED
+}
+
+enum SupportTicketPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum SupportAuthorRole {
+  MEMBER
+  STAFF
+}
+
+/* --------------------------------------------------------------- identity */
+
+model Admin {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String
+  role         AdminRole @default(CONTENT_ADMIN)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  sessions           AdminSession[]
+  resets             PasswordReset[]
+  auditLogs          AuditLog[]
+  reviewedKyc        KycProfile[]    @relation("KycReviewer")
+  approvedPayouts    Payout[]        @relation("PayoutApprover")
+  approvedRankAwards RankAward[]     @relation("RankAwardApprover")
+  settledPlatformFees PlatformFee[]  @relation("PlatformFeeSettler")
+
+  @@index([email])
+  @@index([role])
+}
+
+model AdminSession {
+  id        String   @id @default(cuid())
+  adminId   String
+  tokenHash String   @unique
+  ip        String?
+  userAgent String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  admin Admin @relation(fields: [adminId], references: [id], onDelete: Cascade)
+
+  @@index([adminId])
+  @@index([expiresAt])
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  fullName     String
+  phone        String?
+  country      String?
+  role         UserRole   @default(CLIENT)
+  status       UserStatus @default(ACTIVE)
+  kycStatus    KycStatus  @default(NOT_STARTED)
+
+  // Network / referral tree (sponsor = Personally Enrolled Member parent).
+  sponsorId String?
+  sponsor   User?   @relation("UserSponsor", fields: [sponsorId], references: [id], onDelete: SetNull)
+  sponsored User[]  @relation("UserSponsor")
+
+  // Engine state (mirrors lib/engine MemberNode). Permanent, monotonic.
+  isActiveMember        Boolean @default(true)
+  highestAssociateRank  Int     @default(0)
+  highestLeadershipRank Int     @default(0)
+
+  // Security
+  emailVerifiedAt         DateTime?
+  twoFactorEnabled        Boolean   @default(false)
+  twoFactorSecret         String?
+  twoFactorRecoveryCodes  Json      @default("[]")
+  twoFactorEnrolledAt     DateTime?
+  lastLoginAt             DateTime?
+
+  // Admin access control (meaningless for CLIENT/TRADER).
+  permissions Json    @default("{}")
+  viewOnly    Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions              UserSession[]
+  resets                PasswordReset[]
+  notifications         Notification[]
+  notificationSetting   NotificationSetting?
+  wallet                Wallet?
+  ledgerEntries         LedgerEntry[]        @relation("LedgerOwner")
+  ledgerEntriesSourced  LedgerEntry[]        @relation("LedgerSource")
+  commissions           Commission[]         @relation("CommissionRecipient")
+  commissionsSourced    Commission[]         @relation("CommissionSource")
+  payouts               Payout[]
+  rankAwards            RankAward[]
+  referral              Referral?
+  referralsMade         Referral[]           @relation("ReferralSponsor")
+  matrixPosition        MatrixPosition?
+  registrations         Registration[]
+  profitSettlements     ProfitSettlement[]   @relation("SettlementOwner")
+  settlementsRecorded   ProfitSettlement[]   @relation("SettlementRecorder")
+  brokerAccounts        ClientBrokerAccount[] @relation("BrokerAccountOwner")
+  brokerAccountsVerified ClientBrokerAccount[] @relation("BrokerAccountVerifier")
+  copyRelationships     CopyRelationship[]
+  packageSubscriptions  PackageSubscription[]
+  traderProfile         Trader?
+  kycProfile            KycProfile?
+  supportTickets        SupportTicket[]
+  supportMessages       SupportMessage[]
+  communityPosts        CommunityPost[]
+  communityComments     CommunityComment[]
+  eventRegistrations    EventRegistration[]
+  payments              Payment[]
+  platformFees          PlatformFee[]        @relation("PlatformFeeOwner")
+  ranks                 Rank[]
+
+  @@index([email])
+  @@index([status])
+  @@index([sponsorId])
+  @@index([createdAt])
+}
+
+model UserSession {
+  id        String         @id @default(cuid())
+  userId    String
+  tokenHash String         @unique
+  purpose   SessionPurpose @default(SESSION)
+  ip        String?
+  userAgent String?
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordReset {
+  id        String    @id @default(cuid())
+  email     String
+  scope     String    @default("user") // "user" | "admin"
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  adminId String?
+  admin   Admin?  @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  userId  String?
+  user    User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([email])
+  @@index([scope])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  adminId   String?
+  action    String
+  entity    String
+  entityId  String?
+  before    Json?
+  after     Json?
+  ip        String?
+  createdAt DateTime @default(now())
+
+  admin Admin? @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  @@index([entity])
+  @@index([adminId])
+  @@index([createdAt])
+}
+
+model SiteSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+/* ----------------------------------------------------------- copy pillar */
+
+model Broker {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  url         String   @unique
+  description String?  @db.Text
+  logoUrl     String?
+  region      String?
+  isActive    Boolean  @default(true)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  clientAccounts ClientBrokerAccount[]
+
+  @@index([isActive, order])
+}
+
+model Trader {
+  id               String       @id @default(cuid())
+  userId           String       @unique
+  slug             String       @unique
+  displayName      String
+  headline         String?
+  bio              String?      @db.Text
+  avatarUrl        String?
+  country          String?
+  riskLevel        RiskLevel    @default(MEDIUM)
+  status           TraderStatus @default(ACTIVE)
+  isFeatured       Boolean      @default(false)
+  // Illustrative, past-only performance display. NEVER a promise of future return.
+  illustrativeStats Json?
+  order            Int          @default(0)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  copyRelationships CopyRelationship[]
+
+  @@index([status, order])
+  @@index([isFeatured])
+}
+
+model CopyRelationship {
+  id           String     @id @default(cuid())
+  userId       String
+  traderId     String
+  allocationCents Int     @default(0) // client's own declared allocation, in cents
+  currency     String     @default("USD")
+  status       CopyStatus @default(PENDING)
+  startedAt    DateTime?
+  stoppedAt    DateTime?
+  notes        String?    @db.Text
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  trader Trader @relation(fields: [traderId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([traderId])
+  @@index([status])
+}
+
+// A client's own broker account. The platform records it; it never trades it.
+model ClientBrokerAccount {
+  id             String              @id @default(cuid())
+  userId         String
+  brokerId       String
+  accountRef     String // broker account number / login
+  status         BrokerAccountStatus @default(PENDING)
+  fundedCents    Int                 @default(0)
+  currency       String              @default("USD")
+  verifiedById   String?
+  verifiedAt     DateTime?
+  notes          String?             @db.Text
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  user       User   @relation("BrokerAccountOwner", fields: [userId], references: [id], onDelete: Cascade)
+  broker     Broker @relation(fields: [brokerId], references: [id], onDelete: Restrict)
+  verifiedBy User?  @relation("BrokerAccountVerifier", fields: [verifiedById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([brokerId])
+  @@index([status])
+}
+
+/* --------------------------------------------------------- invest pillar */
+// NO-CUSTODY: a Package is a participation tier (guidance / membership), NOT a
+// return-bearing product. There are intentionally no rate/return/APY fields.
+
+model Package {
+  id          String        @id @default(cuid())
+  slug        String        @unique
+  name        String
+  tier        Int
+  summary     String        @db.Text
+  description String?       @db.Text
+  minCents    Int           @default(0)
+  maxCents    Int?
+  currency    String        @default("USD")
+  termMonths  Int?
+  riskLevel   RiskLevel     @default(MEDIUM)
+  status      PackageStatus @default(DRAFT)
+  isFeatured  Boolean       @default(false)
+  features    Json?
+  order       Int           @default(0)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  subscriptions PackageSubscription[]
+
+  @@index([status, order])
+  @@index([isFeatured])
+}
+
+model PackageSubscription {
+  id          String             @id @default(cuid())
+  userId      String
+  packageId   String
+  amountCents Int                @default(0)
+  currency    String             @default("USD")
+  status      SubscriptionStatus @default(PENDING)
+  startedAt   DateTime?
+  endsAt      DateTime?
+  notes       String?            @db.Text
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  package Package @relation(fields: [packageId], references: [id], onDelete: Restrict)
+
+  @@index([userId])
+  @@index([packageId])
+  @@index([status])
+}
+
+/* -------------------------------------------------------- network pillar */
+
+// Immutable enrollment event: who referred whom, and where they landed.
+model Referral {
+  id         String   @id @default(cuid())
+  userId     String   @unique
+  sponsorId  String
+  position   Int      @default(0)
+  depth      Int      @default(1)
+  createdAt  DateTime @default(now())
+
+  user    User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sponsor User @relation("ReferralSponsor", fields: [sponsorId], references: [id], onDelete: Restrict)
+
+  @@index([sponsorId])
+  @@index([depth])
+}
+
+// Forced 3x3 matrix placement. One position per member.
+model MatrixPosition {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  parentId  String?
+  slot      Int      @default(0) // 0..2 within the parent row
+  depth     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  parent   MatrixPosition?  @relation("MatrixParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children MatrixPosition[] @relation("MatrixParent")
+
+  @@index([parentId])
+  @@index([depth])
+}
+
+// A rank a member has achieved (Associate or Leadership).
+model Rank {
+  id         String   @id @default(cuid())
+  userId     String
+  kind       RankKind
+  rankId     Int
+  achievedAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, kind, rankId])
+  @@index([userId])
+  @@index([kind])
+}
+
+// Immutable commission ledger. A row is never updated or deleted.
+model Commission {
+  id             String           @id @default(cuid())
+  userId         String
+  type           CommissionType
+  amountCents    Int // positive = credit, negative = debit
+  currency       String           @default("USD")
+  status         CommissionStatus @default(PENDING)
+  sourceUserId   String?
+  pool           PoolKind?
+  refType        String?
+  refId          String?
+  description    String?          @db.Text
+  idempotencyKey String?          @unique
+  createdAt      DateTime         @default(now())
+
+  user       User  @relation("CommissionRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  sourceUser User? @relation("CommissionSource", fields: [sourceUserId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model Payout {
+  id          String       @id @default(cuid())
+  userId      String
+  type        String
+  amountCents Int
+  currency    String       @default("USD")
+  status      PayoutStatus @default(REQUESTED)
+  method      PayoutMethod @default(BANK_TRANSFER)
+  destination String?
+  details     String?      @db.Text
+  approvedById String?
+  approvedAt  DateTime?
+  paidAt      DateTime?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  approvedBy Admin? @relation("PayoutApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Shared, accumulating pools. Solvency is tracked explicitly.
+model BonusPool {
+  id           String   @id @default(cuid())
+  kind         PoolKind @unique
+  accruedCents Int      @default(0)
+  paidCents    Int      @default(0)
+  currency     String   @default("USD")
+  isSolvent    Boolean  @default(true)
+  updatedAt    DateTime @updatedAt
+
+  entries PoolLedgerEntry[]
+}
+
+// Append-only pool ledger (accruals and payouts).
+model PoolLedgerEntry {
+  id                String        @id @default(cuid())
+  poolId            String
+  kind              PoolKind
+  entryType         PoolEntryType
+  amountCents       Int
+  balanceAfterCents Int
+  refType           String?
+  refId             String?
+  createdAt         DateTime      @default(now())
+
+  pool BonusPool @relation(fields: [poolId], references: [id], onDelete: Cascade)
+
+  @@index([poolId])
+  @@index([kind])
+  @@index([createdAt])
+}
+
+// A registration fee event and its engine-computed allocation (integer cents).
+model Registration {
+  id                       String   @id @default(cuid())
+  userId                   String
+  sponsorId                String?
+  feeCents                 Int
+  companyReserveCents      Int
+  directReferralCents      Int
+  generationCents          Int
+  rankPoolCents            Int
+  leadershipPoolCents      Int
+  currency                 String   @default("USD")
+  createdAt                DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([sponsorId])
+  @@index([createdAt])
+}
+
+// Admin-entered realized profit per client per period (no live broker feed).
+model ProfitSettlement {
+  id                  String           @id @default(cuid())
+  userId              String
+  periodStart         DateTime
+  periodEnd           DateTime
+  realizedProfitCents Int
+  clientCents         Int              @default(0)
+  sponsorCents        Int              @default(0)
+  companyCents        Int              @default(0)
+  currency            String           @default("USD")
+  status              SettlementStatus @default(RECORDED)
+  recordedById        String?
+  createdAt           DateTime         @default(now())
+
+  user       User  @relation("SettlementOwner", fields: [userId], references: [id], onDelete: Cascade)
+  recordedBy User? @relation("SettlementRecorder", fields: [recordedById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+  @@index([periodStart])
+}
+
+model RankAward {
+  id           String          @id @default(cuid())
+  userId       String
+  kind         RankKind
+  rankId       Int
+  rewardCents  Int?
+  rewardSku    String?
+  status       RankAwardStatus
+  approvedById String?
+  approvedAt   DateTime?
+  paidAt       DateTime?
+  createdAt    DateTime        @default(now())
+
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  approvedBy Admin? @relation("RankAwardApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([status])
+}
+
+/* --------------------------------------------------------- ledger / money */
+
+model Wallet {
+  id           String   @id @default(cuid())
+  userId       String   @unique
+  balanceCents Int      @default(0)
+  currency     String   @default("USD")
+  updatedAt    DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// Append-only ledger. A row is never updated or deleted.
+model LedgerEntry {
+  id                String          @id @default(cuid())
+  userId            String
+  direction         LedgerDirection
+  type              TransactionType
+  amountCents       Int // always positive; `direction` carries the sign
+  balanceAfterCents Int
+  currency          String          @default("USD")
+  sourceUserId      String?
+  refType           String?
+  refId             String?
+  description       String?         @db.Text
+  idempotencyKey    String?         @unique
+  createdAt         DateTime        @default(now())
+
+  user       User  @relation("LedgerOwner", fields: [userId], references: [id], onDelete: Cascade)
+  sourceUser User? @relation("LedgerSource", fields: [sourceUserId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+/* ------------------------------------------------------------- community */
+
+model CommunityPost {
+  id         String     @id @default(cuid())
+  authorId   String
+  title      String?
+  body       String     @db.Text
+  status     PostStatus @default(PUBLISHED)
+  isPinned   Boolean    @default(false)
+  likeCount  Int        @default(0)
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  author   User               @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  comments CommunityComment[]
+
+  @@index([status, createdAt])
+  @@index([authorId])
+}
+
+model CommunityComment {
+  id        String   @id @default(cuid())
+  postId    String
+  authorId  String
+  body      String   @db.Text
+  status    PostStatus @default(PUBLISHED)
+  createdAt DateTime @default(now())
+
+  post   CommunityPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  author User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([authorId])
+}
+
+model Event {
+  id          String   @id @default(cuid())
+  title       String
+  slug        String   @unique
+  description String?  @db.Text
+  startsAt    DateTime
+  endsAt      DateTime?
+  location    String?
+  url         String?
+  coverUrl    String?
+  isPublished Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  registrations EventRegistration[]
+
+  @@index([startsAt])
+  @@index([isPublished])
+}
+
+model EventRegistration {
+  id        String                  @id @default(cuid())
+  eventId   String
+  userId    String
+  status    EventRegistrationStatus @default(GOING)
+  createdAt DateTime                @default(now())
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@index([userId])
+}
+
+model Course {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  title       String
+  summary     String?
+  coverUrl    String?
+  level       String?
+  isPublished Boolean  @default(false)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  lessons Lesson[]
+
+  @@index([isPublished, order])
+}
+
+model Lesson {
+  id        String   @id @default(cuid())
+  courseId  String
+  title     String
+  body      String?  @db.Text
+  videoUrl  String?
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  course Course @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  @@index([courseId, order])
+}
+
+/* ------------------------------------------------------------------- cms */
+
+model Page {
+  id              String        @id @default(cuid())
+  slug            String        @unique
+  title           String
+  content         String        @db.Text
+  metaTitle       String?
+  metaDescription String?
+  ogImage         String?
+  status          ContentStatus @default(DRAFT)
+  publishedAt     DateTime?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([status])
+}
+
+model NavigationItem {
+  id         String      @id @default(cuid())
+  label      String
+  url        String
+  location   NavLocation @default(HEADER)
+  order      Int         @default(0)
+  isEnabled  Boolean     @default(true)
+  isExternal Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([location, order])
+}
+
+model HomepageSection {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  eyebrow   String?
+  title     String
+  subtitle  String?
+  content   Json?
+  order     Int      @default(0)
+  isEnabled Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@index([order])
+}
+
+model Stat {
+  id        String   @id @default(cuid())
+  label     String
+  value     String
+  suffix    String?
+  note      String?
+  order     Int      @default(0)
+  isEnabled Boolean  @default(true)
+  updatedAt DateTime @updatedAt
+
+  @@index([order])
+}
+
+model Testimonial {
+  id            String   @id @default(cuid())
+  name          String
+  role          String?
+  company       String?
+  quote         String   @db.Text
+  avatarMediaId String?
+  isEnabled     Boolean  @default(true)
+  order         Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  avatar Media? @relation(fields: [avatarMediaId], references: [id], onDelete: SetNull)
+
+  @@index([order])
+}
+
+model Faq {
+  id        String   @id @default(cuid())
+  question  String
+  answer    String   @db.Text
+  category  String?
+  isEnabled Boolean  @default(true)
+  order     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([order])
+  @@index([category])
+}
+
+model BlogCategory {
+  id          String   @id @default(cuid())
+  name        String
+  slug        String   @unique
+  description String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  posts BlogPost[]
+
+  @@index([order])
+}
+
+model BlogTag {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+
+  posts BlogPostTag[]
+}
+
+model BlogPost {
+  id             String        @id @default(cuid())
+  title          String
+  slug           String        @unique
+  excerpt        String        @db.Text
+  content        String        @db.Text
+  coverImageUrl  String?
+  coverMediaId   String?
+  categoryId     String?
+  authorName     String        @default("Global Traders HubX Desk")
+  status         ContentStatus @default(DRAFT)
+  isFeatured     Boolean       @default(false)
+  views          Int           @default(0)
+  seoTitle       String?
+  seoDescription String?
+  publishedAt    DateTime?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  category BlogCategory? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  cover    Media?        @relation(fields: [coverMediaId], references: [id], onDelete: SetNull)
+  tags     BlogPostTag[]
+
+  @@index([status, publishedAt])
+  @@index([isFeatured])
+  @@index([categoryId])
+}
+
+model BlogPostTag {
+  postId String
+  tagId  String
+
+  post BlogPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  tag  BlogTag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([postId, tagId])
+  @@index([tagId])
+}
+
+model Media {
+  id           String   @id @default(cuid())
+  filename     String   @unique
+  originalName String
+  mimeType     String
+  size         Int
+  width        Int?
+  height       Int?
+  url          String
+  alt          String?
+  createdAt    DateTime @default(now())
+
+  testimonials Testimonial[]
+  posts        BlogPost[]
+}
+
+model ContactMessage {
+  id        String        @id @default(cuid())
+  name      String
+  email     String
+  phone     String?
+  subject   String?
+  message   String        @db.Text
+  status    MessageStatus @default(NEW)
+  adminNote String?       @db.Text
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+/* ------------------------------------------------------------ operations */
+
+model Notification {
+  id        String              @id @default(cuid())
+  userId    String
+  type      NotificationType    @default(SYSTEM)
+  channel   NotificationChannel @default(IN_APP)
+  title     String
+  body      String?             @db.Text
+  link      String?
+  readAt    DateTime?
+  createdAt DateTime            @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+model NotificationSetting {
+  id              String   @id @default(cuid())
+  userId          String   @unique
+  emailEnabled    Boolean  @default(true)
+  whatsappEnabled Boolean  @default(false)
+  telegramEnabled Boolean  @default(false)
+  whatsappNumber  String?
+  telegramChatId  String?
+  updatedAt       DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model KycProfile {
+  id              String    @id @default(cuid())
+  userId          String    @unique
+  status          KycStatus @default(NOT_STARTED)
+  legalName       String?
+  dateOfBirth     DateTime?
+  country         String?
+  address         String?   @db.Text
+  idType          String?
+  idNumber        String?
+  documents       Json?
+  submittedAt     DateTime?
+  reviewedAt      DateTime?
+  reviewedById    String?
+  rejectionReason String?   @db.Text
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reviewedBy Admin? @relation("KycReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+}
+
+model SupportTicket {
+  id            String                @id @default(cuid())
+  userId        String
+  subject       String
+  category      String                @default("GENERAL")
+  priority      SupportTicketPriority @default(NORMAL)
+  status        SupportTicketStatus   @default(OPEN)
+  lastMessageAt DateTime              @default(now())
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages SupportMessage[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([lastMessageAt])
+}
+
+model SupportMessage {
+  id         String            @id @default(cuid())
+  ticketId   String
+  authorId   String?
+  authorRole SupportAuthorRole
+  body       String            @db.Text
+  createdAt  DateTime          @default(now())
+
+  ticket SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId])
+}
+
+// Inbound gateway invoice. `paymentRef` is the webhook join key.
+model Payment {
+  id               String         @id @default(cuid())
+  userId           String
+  purpose          PaymentPurpose
+  amountCents      Int // total charged, INCLUDING the platform fee
+  platformFeeCents Int            @default(0)
+  currency         String         @default("USDT")
+  status           PaymentStatus  @default(PENDING)
+  paymentRef       String         @unique
+  gatewayTxid      String?
+  paymentUrl       String?
+  txHash           String?
+  paidAt           DateTime?
+  createdAt        DateTime       @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Platform transaction fees — operator revenue, settled by hand. One per payment.
+model PlatformFee {
+  id            String            @id @default(cuid())
+  userId        String
+  paymentId     String?           @unique
+  purpose       PaymentPurpose
+  amountCents   Int
+  currency      String            @default("USDT")
+  walletAddress String            @default("")
+  network       String            @default("")
+  asset         String            @default("")
+  status        PlatformFeeStatus @default(PENDING)
+  settledAt     DateTime?
+  settledById   String?
+  note          String?           @db.Text
+  createdAt     DateTime          @default(now())
+
+  user      User   @relation("PlatformFeeOwner", fields: [userId], references: [id], onDelete: Cascade)
+  settledBy Admin? @relation("PlatformFeeSettler", fields: [settledById], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@index([userId])
+}
