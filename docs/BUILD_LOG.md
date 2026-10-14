@@ -10,7 +10,7 @@
 | **1. Scaffold + design system** | Next 16 app · brand tokens · primitives · public shell | ✅ 2026-10-11 |
 | **2. Database + engine** | Prisma schema · migration · seed · port Aglotrends engine · integer-cents money | ✅ 2026-10-14 |
 | **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ✅ 2026-10-14 |
-| **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | ⬜ |
+| **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
 | **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | ⬜ |
 | **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ⬜ |
 | **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | ⬜ |
@@ -199,8 +199,68 @@ POST /api/auth/forgot-password 200   (ghost email — non-enumerating)
 POST /api/auth/register        400   (weak password)
 ```
 
-## Next — Phase 4 (client portal)
-1. Replace the `app/dashboard` placeholder with the real portal: dashboard, packages, network,
-   wallet, transactions, community, settings, KYC, support.
-2. Seed business content once Henry supplies it (packages, brokers, testimonials).
-3. MFA scaffold → Phase 8.
+## Phase 4 — portal core done (2026-10-14), gated remainder
+
+**Landed.** Member portal chrome + six working surfaces. Two commits: `0676241` (shell,
+overview, settings, verification, notifications) and `c1e404e` (transactions, support,
+community).
+
+**Guard placement.** `requireUser()` sits in `app/dashboard/layout.tsx`, not in each page —
+so no future child route can forget it. Same reasoning as `requireAdminPermission` on the
+admin side: *an action is an entry point, not a helper.*
+
+**Surfaces**
+
+| Route | Reads | Writes |
+|---|---|---|
+| `/dashboard` | wallet, sponsor, downline count, unread, ledger tail, open tickets | — |
+| `/dashboard/transactions` | `LedgerEntry` paginated (25/page) | — |
+| `/dashboard/support` · `/new` · `/[id]` | `SupportTicket` + `SupportMessage` | `POST /api/support`, `POST /api/support/[id]/messages` |
+| `/dashboard/community` | `CommunityPost` + `CommunityComment` | `POST /api/community/posts`, `POST …/[id]/comments` |
+| `/dashboard/verification` | `User.kycStatus` | — |
+| `/dashboard/notifications` | `Notification` | `POST /api/account/notifications/read-all` |
+| `/dashboard/settings` | full `User` row | `PATCH /api/account/profile` (name/phone/country only) |
+
+**Deliberate absences — nothing renders that does nothing:**
+- No wallet / network / packages / copy nav entries until those routes exist (PLAN §3
+  forbids decorative dead links).
+- No like, edit, delete or moderation controls on community posts — those are Phase 5.
+- Verification page states out loud that document upload arrives in Phase 7 rather than
+  shipping a form that posts nowhere.
+- Overview wallet card says *"No wallet has been opened on this account yet"* instead of
+  inventing a balance.
+
+**Security posture**
+- Another member's ticket id is **404, not 403** — a permission error would confirm the id
+  is real.
+- Comments cannot thread onto `HIDDEN`/`REMOVED` posts; moderated content is not reachable
+  through the back door.
+- `PATCH /api/account/profile` cannot touch email, role, status, kyc or sponsor.
+- Rate limits: profile 20/15m · tickets 10/h · replies 30/h · posts 10/h · comments 30/h.
+
+**Bug found live that unit tests could not see:**
+`toLocaleDateString` rejects `dateStyle` + `timeStyle` (and silently drops `hour`/`minute`).
+The ticket thread 500'd on a real request while all 121 tests were green — the list branch
+was never executed because no notifications or messages existed. Both date-time renderers
+moved to `toLocaleString`. Smoke test now seeds a notification row via `psql` specifically so
+that branch runs.
+
+**Verification**
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test` | ✅ **121/121 green** |
+| Live smoke (part 1, `0676241`) | ✅ **15/15** |
+| Live smoke (part 2, `c1e404e`) | ✅ **23/23** — incl. cross-member 404s and the seeded-notification branch |
+
+**Gated — needs Henry or Phase 6**
+- **Wallet** — page can render a real zero-balance, but has nothing to *do* until the
+  ledger moves (Phase 6).
+- **Network** — `Referral` / `MatrixPosition` are engine-owned, created in Phase 6.
+- **Packages / copy trading** — blocked on Henry's package tiers, broker list and trader list.
+
+## Next — Phase 5 (admin + superadmin)
+1. Ops admin: users, KYC, packages, copy, network, community moderation, content.
+2. Superadmin: admins, roles, settings, integrations, audit, reports.
+3. Seed business content once Henry supplies it (packages, brokers, testimonials).
+4. Wallet / network / copy trading unblock with Phase 6's engine.
