@@ -1,56 +1,230 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { Logo } from "@/components/site/logo";
+import { prisma } from "@/lib/prisma";
+import { formatCents } from "@/lib/money";
 import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 
-export const metadata = { title: "Dashboard" };
+export const metadata = { title: "Overview" };
 
-/**
- * Phase 3 placeholder — proves the session guard end to end.
- * The real member portal is Phase 4 and will replace this page.
- */
+const kycCopy = {
+  NOT_STARTED: {
+    title: "Verification not started",
+    body: "Complete identity verification to unlock the full platform.",
+    action: "/dashboard/verification",
+    cta: "Start verification",
+  },
+  PENDING: {
+    title: "Verification in review",
+    body: "Your documents are with our review team. We will notify you when this changes.",
+    action: "/dashboard/verification",
+    cta: "View submission",
+  },
+  VERIFIED: {
+    title: "Identity verified",
+    body: "Your account is fully verified.",
+    action: "/dashboard/verification",
+    cta: "View details",
+  },
+  REJECTED: {
+    title: "Verification needs attention",
+    body: "Your submission could not be accepted. Review the reason and resubmit.",
+    action: "/dashboard/verification",
+    cta: "Review and resubmit",
+  },
+} as const;
+
 export default async function DashboardPage() {
   const user = await requireUser();
 
-  return (
-    <div className="relative min-h-screen">
-      <div className="pointer-events-none absolute inset-0 grid-lines opacity-30" />
-      <header className="relative z-10 border-b border-border">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
-          <Link href="/">
-            <Logo />
-          </Link>
-          <form action="/api/auth/logout" method="post">
-            <button
-              type="submit"
-              className="text-sm text-muted transition-colors hover:text-foreground"
-            >
-              Sign out
-            </button>
-          </form>
-        </div>
-      </header>
+  // All counts are read from the real schema. Nothing here is illustrative.
+  const [wallet, sponsor, downline, unread, recent, openTickets] =
+    await Promise.all([
+      prisma.wallet.findUnique({ where: { userId: user.id } }),
+      user.sponsorId
+        ? prisma.user.findUnique({
+            where: { id: user.sponsorId },
+            select: { fullName: true },
+          })
+        : Promise.resolve(null),
+      prisma.user.count({ where: { sponsorId: user.id } }),
+      prisma.notification.count({ where: { userId: user.id, readAt: null } }),
+      prisma.ledgerEntry.findMany({
+        where: { userId: user.id },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
+      prisma.supportTicket.count({
+        where: { userId: user.id, status: "OPEN" },
+      }),
+    ]);
 
-      <main className="relative z-10 mx-auto max-w-5xl px-6 py-12">
-        <div className="card p-7">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
-              Welcome, {user.fullName}
-            </h1>
-            <Badge variant="brand">{user.role}</Badge>
-            {user.emailVerifiedAt ? (
-              <Badge variant="success">Verified</Badge>
-            ) : (
-              <Badge variant="warning">Email unverified</Badge>
-            )}
+  const kyc = kycCopy[user.kycStatus];
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="font-display text-2xl font-bold tracking-tight text-foreground">
+          Welcome back, {user.fullName.split(" ")[0]}
+        </h1>
+        <p className="mt-1 text-sm text-muted">{user.email}</p>
+      </div>
+
+      {!user.emailVerifiedAt && (
+        <div className="card border-warning/40 p-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="font-semibold text-foreground">Confirm your email</p>
+              <p className="mt-1 text-sm text-muted">
+                We sent a verification link to {user.email}. It expires in 24 hours.
+              </p>
+            </div>
+            <Link
+              href="/verify-email"
+              className="shrink-0 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-background transition-opacity hover:opacity-90"
+            >
+              Resend link
+            </Link>
           </div>
-          <p className="mt-2 text-sm text-muted">{user.email}</p>
-          <p className="mt-6 text-sm text-faint">
-            The member portal (dashboard, network, earnings, payouts) arrives in
-            Phase 4.
-          </p>
         </div>
-      </main>
+      )}
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardDescription>Wallet balance</CardDescription>
+            <CardTitle className="text-2xl">
+              {wallet ? formatCents(wallet.balanceCents, wallet.currency) : "$0.00"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-faint">
+              {wallet
+                ? `Updated ${wallet.updatedAt.toLocaleDateString("en-US", {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric",
+                  })}`
+                : "No wallet has been opened on this account yet."}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardDescription>Your network</CardDescription>
+            <CardTitle className="text-2xl">
+              {downline} {downline === 1 ? "member" : "members"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className="text-xs text-faint">
+              {sponsor
+                ? `Referred by ${sponsor.fullName}`
+                : "No sponsor recorded on this account."}
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card className={user.kycStatus === "VERIFIED" ? "" : "border-warning/40"}>
+        <CardHeader>
+          <div className="flex items-center gap-3">
+            <CardTitle>{kyc.title}</CardTitle>
+            <Badge
+              variant={
+                user.kycStatus === "VERIFIED"
+                  ? "success"
+                  : user.kycStatus === "REJECTED"
+                    ? "danger"
+                    : user.kycStatus === "PENDING"
+                      ? "warning"
+                      : "outline"
+              }
+            >
+              {user.kycStatus.replace("_", " ")}
+            </Badge>
+          </div>
+          <CardDescription>{kyc.body}</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Link
+            href={kyc.action}
+            className="inline-block rounded-lg border border-border-strong px-4 py-2 text-sm font-semibold text-brand transition-colors hover:bg-brand/10"
+          >
+            {kyc.cta}
+          </Link>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-baseline justify-between gap-4">
+            <div>
+              <CardTitle>Recent activity</CardTitle>
+              <CardDescription>Your latest ledger movements</CardDescription>
+            </div>
+            <Link href="/dashboard/notifications" className="text-sm text-brand">
+              {unread > 0 ? `${unread} unread` : "Notifications"}
+            </Link>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {recent.length === 0 ? (
+            <p className="text-sm text-faint">
+              No transactions yet. Ledger entries appear here once commissions,
+              subscriptions or payouts are recorded against your account.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {recent.map((entry) => (
+                <li
+                  key={entry.id}
+                  className="flex items-center justify-between gap-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-foreground">
+                      {entry.description ?? entry.type.replace("_", " ")}
+                    </p>
+                    <p className="text-xs text-faint">
+                      {entry.createdAt.toLocaleDateString("en-US", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </p>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p
+                      className={
+                        entry.direction === "CREDIT"
+                          ? "text-sm font-semibold text-emerald"
+                          : "text-sm font-semibold text-foreground"
+                      }
+                    >
+                      {entry.direction === "CREDIT" ? "+" : "−"}
+                      {formatCents(entry.amountCents, entry.currency)}
+                    </p>
+                    <p className="text-xs text-faint">{entry.type}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
+
+      <p className="text-xs text-faint">
+        Wallet top-ups, copy trading, packages and support tickets are not yet
+        enabled on this account. {openTickets > 0 && `${openTickets} open ticket(s). `}
+        They arrive with the later build phases.
+      </p>
     </div>
   );
 }

@@ -50,11 +50,33 @@ export const verifyEmailSchema = z.object({
   token: z.string().min(1, "Missing verification token"),
 });
 
+/**
+ * Self-service profile edit. Email is deliberately absent — changing it re-runs
+ * verification, which is its own flow. `phone`/`country` accept an empty string
+ * so an HTML form can clear a field, and normalise it to null at the edge.
+ */
+export const profileSchema = z.object({
+  fullName: z.string().trim().min(2, "Enter your full name").max(120),
+  phone: z
+    .string()
+    .trim()
+    .max(32, "Phone number is too long")
+    .or(z.literal(""))
+    .optional(),
+  country: z
+    .string()
+    .trim()
+    .max(64, "Country name is too long")
+    .or(z.literal(""))
+    .optional(),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>;
 export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+export type ProfileInput = z.infer<typeof profileSchema>;
 
 /** First human-readable message from a Zod error. */
 export function firstError(error: z.ZodError): string {

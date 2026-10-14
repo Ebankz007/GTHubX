@@ -81,4 +81,5 @@ export const RATE_LIMITS = {
   forgotPassword: { limit: 5, windowMs: 60 * 60 * 1000 },
   resetPassword: { limit: 10, windowMs: 60 * 60 * 1000 },
   verifyEmail: { limit: 10, windowMs: 60 * 60 * 1000 },
+  profileUpdate: { limit: 20, windowMs: 15 * 60 * 1000 },
 } as const;

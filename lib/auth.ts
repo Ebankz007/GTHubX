@@ -27,6 +27,8 @@ export type SessionUser = {
   role: UserRole;
   status: UserStatus;
   kycStatus: KycStatus;
+  /** The member who referred this account, if any. Drives the network view. */
+  sponsorId: string | null;
   emailVerifiedAt: Date | null;
   twoFactorEnabled: boolean;
 };
@@ -138,6 +140,7 @@ export async function getCurrentUser(): Promise<SessionUser | null> {
     role: u.role,
     status: u.status,
     kycStatus: u.kycStatus,
+    sponsorId: u.sponsorId,
     emailVerifiedAt: u.emailVerifiedAt,
     twoFactorEnabled: u.twoFactorEnabled,
   };
