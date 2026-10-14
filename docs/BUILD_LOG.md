@@ -9,7 +9,7 @@
 | **0. Audit + plan** | BRIEF · AUDIT · ARCHITECTURE · PLAN | ✅ 2026-10-11 |
 | **1. Scaffold + design system** | Next 16 app · brand tokens · primitives · public shell | ✅ 2026-10-11 |
 | **2. Database + engine** | Prisma schema · migration · seed · port Aglotrends engine · integer-cents money | ✅ 2026-10-14 |
-| **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ⬜ |
+| **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ✅ 2026-10-14 |
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | ⬜ |
 | **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | ⬜ |
 | **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ⬜ |
@@ -70,7 +70,7 @@ Repo/package name `gthubx` and domain `gthubx.com` unchanged — still the acron
 | `pnpm test` | ✅ 6/6 green |
 | Live smoke (`next dev` :3500) | ✅ title / footer / meta updated, old name absent |
 
-## Phase 2 — in progress (2026-10-14)
+## Phase 2 — done (2026-10-14)
 
 **Decisions locked.** Decision A = **no-custody** — the platform never holds client funds;
 packages are non-custodial participation tiers; referral rewards derive from product revenue,
@@ -132,8 +132,75 @@ PG16 `:5433`; `CREATEDB` granted (needed for the migrate shadow DB); `.env` fill
 (needs Henry's business input, not invention): Packages, Brokers, Traders, Testimonials,
 FAQ / blog content. Admin / User accounts deferred to Phase 3 (auth + hashing).
 
-## Next — Phase 3 (auth + RBAC)
-1. Auth: register / login / reset, sessions, email verify, RBAC matrix (6 admin roles),
-   rate limiting, MFA.
+## Phase 3 — done (2026-10-14)
+
+**Scope:** user + admin sessions, register / login / logout / verify-email / forgot-password /
+reset-password, RBAC matrix (6 admin roles), rate limiting, audit trail, email stub.
+**MFA scaffold deferred to Phase 8** (hardening) — not needed to unblock Phase 4.
+
+**Auth model.** Two independent session tables — `UserSession` (cookie `gthubx_session`) and
+`AdminSession` (cookie `gthubx_admin`). Tokens are 32-byte base64url random, stored **hashed**
+(SHA-256); the raw token exists only in the cookie / email link. Sessions: 7-day TTL,
+httpOnly + sameSite=lax, revocable. Passwords: **bcrypt cost 12**, capped at 72 bytes
+(bcrypt silently truncates past that — the validator enforces the cap).
+
+**RBAC.** 20 permissions across 6 `AdminRole`s; `permissionForAdminPath` **fails closed**
+(unknown path → `null` → denied). Tests assert no non-super role reaches `team` / `settings` / `audit`.
+
+**Files created**
+```
+lib/auth.ts lib/rbac.ts lib/password.ts lib/tokens.ts
+lib/validators.ts lib/rate-limit.ts lib/audit.ts lib/http.ts
+lib/notifications/email.ts
+app/api/auth/{register,login,logout,verify-email,forgot-password,reset-password}/route.ts
+app/(auth)/layout.tsx
+app/(auth)/{login,register,forgot-password,reset-password,verify-email}/page.tsx
+app/dashboard/page.tsx              # Phase 3 placeholder — Phase 4 replaces
+components/auth/{form-field,login-form,register-form,forgot-password-form,
+                 reset-password-form,verify-email-panel}.tsx
+tests/auth/{rbac,password,tokens,validators}.test.ts
+```
+Modified: `package.json`, `pnpm-lock.yaml` (`sonner`).
+
+**Design notes**
+- **Register:** rate-limit → validate → 409 on duplicate → `referralCode` resolves to the
+  **sponsor's user id** (`User` has no code column) → user created `status=PENDING` →
+  `UserSession` purpose `EMAIL_VERIFY`, 24 h TTL. `Referral` / `MatrixPosition` rows are
+  **engine-owned — created in Phase 6**, not here.
+- **Login:** timing-equalised (dummy bcrypt compare when the email is unknown, so response
+  time does not leak existence); `SUSPENDED` → 403; `PENDING` may still sign in (they need a
+  session to reach the verify screen).
+- **Forgot-password:** always returns the same ok response — no account enumeration.
+- **Reset-password:** revokes **all** of the user's sessions in the same transaction.
+- **Email stub:** logs the link in dev; in prod returns `{delivered:false, reason}` rather than
+  faking success. Real SMTP lands in Phase 7.
+- **Rate limits** (in-memory fixed window, single-process — swap for Redis behind the same
+  signature if horizontally scaled): login 10/15 m · register 5/1 h · forgot 5/1 h ·
+  reset 10/1 h · verify 10/1 h.
+- **Audit** (`recordAudit`) **throws on failure by design** — a trail that silently drops
+  entries looks complete while lying.
+
+**Verification**
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test` | ✅ **121/121 green** (88 engine + 33 auth) |
+| Live E2E smoke (`next dev` :3500, real PG) | ✅ **13/13** — see below |
+
+Live smoke — real HTTP, real Postgres, real cookies, real bcrypt (no mocks):
+```
+POST /api/auth/register        201   POST /api/auth/login           200  (pre-verify)
+[email:dev] verify-email?token=…     POST /api/auth/verify-email    200
+POST /api/auth/login           200   GET  /dashboard                200  (session)
+POST /api/auth/logout          200   GET  /dashboard                307 → /login 200
+POST /api/auth/register        409   (duplicate email)
+POST /api/auth/login           401   (wrong password)
+POST /api/auth/forgot-password 200   (ghost email — non-enumerating)
+POST /api/auth/register        400   (weak password)
+```
+
+## Next — Phase 4 (client portal)
+1. Replace the `app/dashboard` placeholder with the real portal: dashboard, packages, network,
+   wallet, transactions, community, settings, KYC, support.
 2. Seed business content once Henry supplies it (packages, brokers, testimonials).
-3. **Commit Phase 2** — awaiting Henry's word; nothing committed yet.
+3. MFA scaffold → Phase 8.
