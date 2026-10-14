@@ -35,6 +35,38 @@ export const TextField = React.forwardRef<HTMLInputElement, TextFieldProps>(
 );
 TextField.displayName = "TextField";
 
+export interface TextAreaProps
+  extends React.TextareaHTMLAttributes<HTMLTextAreaElement> {
+  label: string;
+  hint?: string;
+}
+
+export const TextArea = React.forwardRef<HTMLTextAreaElement, TextAreaProps>(
+  ({ label, hint, className, id, name, ...props }, ref) => {
+    const inputId = id ?? name;
+    return (
+      <label htmlFor={inputId} className="flex flex-col gap-1.5">
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        <textarea
+          ref={ref}
+          id={inputId}
+          name={name}
+          className={cn(
+            "w-full rounded-xl border border-border bg-elevated px-3.5 py-3 text-sm text-foreground",
+            "placeholder:text-faint transition-colors resize-y",
+            "focus:border-brand/60 focus:outline-none focus:ring-2 focus:ring-brand/25",
+            "disabled:opacity-50",
+            className,
+          )}
+          {...props}
+        />
+        {hint ? <span className="text-xs text-faint">{hint}</span> : null}
+      </label>
+    );
+  },
+);
+TextArea.displayName = "TextArea";
+
 /** Inline error banner shared by every auth form. */
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;

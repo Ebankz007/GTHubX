@@ -78,6 +78,52 @@ export type ResetPasswordInput = z.infer<typeof resetPasswordSchema>;
 export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
 export type ProfileInput = z.infer<typeof profileSchema>;
 
+/* ------------------------------------------------------------- support ----- */
+
+export const createTicketSchema = z.object({
+  subject: z
+    .string()
+    .trim()
+    .min(3, "Subject must be at least 3 characters")
+    .max(160, "Subject is too long"),
+  category: z.string().trim().max(40).optional(),
+  priority: z.enum(["LOW", "NORMAL", "HIGH", "URGENT"]).default("NORMAL"),
+  body: z
+    .string()
+    .trim()
+    .min(10, "Tell us a bit more — at least 10 characters")
+    .max(4000, "Message is too long"),
+});
+
+export const createMessageSchema = z.object({
+  body: z.string().trim().min(1, "Write a message").max(4000, "Message is too long"),
+});
+
+/* ------------------------------------------------------------ community ----- */
+
+export const createPostSchema = z.object({
+  title: z
+    .string()
+    .trim()
+    .max(160, "Title is too long")
+    .or(z.literal(""))
+    .optional(),
+  body: z
+    .string()
+    .trim()
+    .min(2, "Write something — at least 2 characters")
+    .max(4000, "Post is too long"),
+});
+
+export const createCommentSchema = z.object({
+  body: z.string().trim().min(1, "Write a comment").max(2000, "Comment is too long"),
+});
+
+export type CreateTicketInput = z.infer<typeof createTicketSchema>;
+export type CreateMessageInput = z.infer<typeof createMessageSchema>;
+export type CreatePostInput = z.infer<typeof createPostSchema>;
+export type CreateCommentInput = z.infer<typeof createCommentSchema>;
+
 /** First human-readable message from a Zod error. */
 export function firstError(error: z.ZodError): string {
   return error.issues[0]?.message ?? "Invalid input";

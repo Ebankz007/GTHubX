@@ -64,7 +64,7 @@ export default async function NotificationsPage() {
                         </p>
                       )}
                       <p className="mt-2 text-xs text-faint">
-                        {n.createdAt.toLocaleDateString("en-US", {
+                        {n.createdAt.toLocaleString("en-US", {
                           year: "numeric",
                           month: "short",
                           day: "numeric",
