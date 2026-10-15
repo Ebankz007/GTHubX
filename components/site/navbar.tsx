@@ -5,16 +5,12 @@ import Link from "next/link";
 import { Menu, X } from "lucide-react";
 import { Logo } from "./logo";
 import { ButtonLink } from "@/components/ui/button";
+import { HEADER_LINKS } from "@/lib/public-nav";
 import { cn } from "@/lib/utils";
 
-const NAV = [
-  { label: "Copy Trading", href: "/copy-trading" },
-  { label: "Packages", href: "/packages" },
-  { label: "Traders", href: "/traders" },
-  { label: "Community", href: "/community" },
-  { label: "Network", href: "/network" },
-  { label: "Education", href: "/education" },
-];
+// One source of truth, shared with the footer, the seed and the guard test —
+// this used to be a hardcoded copy that drifted from both.
+const NAV = HEADER_LINKS;
 
 export function Navbar() {
   const [open, setOpen] = useState(false);

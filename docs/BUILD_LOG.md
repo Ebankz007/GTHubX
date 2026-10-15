@@ -463,10 +463,68 @@ Reports coverage: superadmin reaches the page; `TRADER_ADMIN` and `SUPPORT_ADMIN
 holds `reports`) are 307'd; `?days=7` selects the 7-day range; an unknown `?days=99999`
 falls back to 30 rather than producing an empty chart; the live-data statement is present.
 
+## Public site — dead-link fix (2026-10-15)
+
+**The defect.** `curl` against a live server showed **15 of the 18 advertised public URLs
+returning 404**. Only `/`, `/login` and `/register` resolved. Every visitor who clicked
+Copy Trading, Packages, Traders, Community, Network, Education, About, Contact, FAQ, Blog
+or any of the four legal pages landed on a 404.
+
+**Root cause — three hand-maintained lists, plus a fourth nobody read.** `navbar.tsx` and
+`footer.tsx` each hardcoded their own link arrays, `prisma/seed.ts` held a third copy, and
+the `NavigationItem` table those seed rows filled **was read by nothing**. The copies had
+already diverged: the footer said `/legal/terms` while the seed said `/terms`, and the
+footer's labels ("Investment Packages", "Referral Network") differed from the header's.
+
+**Fix — one source of truth.**
+- `lib/public-nav.ts` — the single nav definition, consumed by the navbar, the footer, the
+  seed and the guard test. Client-safe (no fetching, no React) so it can be imported
+  anywhere.
+- `prisma/seed.ts` now provisions `NavigationItem` **from that module**, so the table is a
+  mirror and can never disagree with what renders. Ids unchanged, so the seed stays
+  idempotent and existing rows update in place.
+- Canonical legal URLs are `/legal/*` — matching what the footer had always rendered.
+  Legacy `/terms`, `/privacy`, `/cookies`, `/risk-disclosure` now 404 rather than
+  silently coexisting as second copies of the same page.
+
+**14 routes built — and deliberately empty.** Each renders an honest "not yet published"
+state plus links that work. No invented marketing copy, and above all no invented legal
+text: drafting terms, a risk disclosure or a privacy policy is legal authorship, not
+engineering. They are `noindex` until real copy lands.
+
+- `lib/pending-pages.ts` — an explicit **whitelist** of unpublished paths.
+- `app/(public)/[slug]/page.tsx` and `app/(public)/legal/[slug]/page.tsx` — served from
+  that whitelist and `notFound()` for anything else.
+
+**Why a whitelist and not a catch-all:** an open `[...slug]` would turn every typo'd or
+forgotten link into a plausible-looking page and destroy the exact signal that found this
+bug. Unknown paths must still 404.
+
+**The regression is now structurally impossible.** `tests/public-nav.test.ts` (10 tests)
+asserts every advertised href is a real route or a declared pending entry, that the
+whitelist is backed by real page files, that the four legal links stay under `/legal/*`,
+and that no href or id is duplicated. A dead link fails the test run, not production.
+
+**Note on the DB rows:** they are provisioned from the same source but are not yet the
+*render* source — rendering reads the module directly. Wiring the runtime to the table
+needs a `NavLocation` group for the footer's three columns, which is a schema change
+better made when an admin nav editor is actually specified, not speculatively now.
+
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test` | ✅ **139/139 green** (18 files, +10 public-nav) |
+| Live smoke (cold start + verified clean shutdown) | ✅ **85/85** |
+
+Smoke coverage: all 17 public routes → 200; four legacy paths → 404; unknown path → 404;
+homepage advertises `/copy-trading` and `/legal/terms` and does **not** advertise the old
+`/terms`; unpublished pages state "Not yet published" and contain no illustrative content.
+
 ## Next — Phase 5b
 1. **KYC review** — blocked on Henry: no intake path exists yet (the member page
    deliberately defers to Phase 7 adapters), and KYC is regulatory-adjacent, so document
    requirements and PII handling are his call, not something to invent.
 2. Ops: deposits/withdrawals review (needs Phase 7 payment adapters to have rows).
-3. Content: blog, FAQ, media, messages — needs Henry's copy.
+3. Content: the 14 public routes exist and wait only on Henry's copy — supplying it moves
+   each one out of `lib/pending-pages.ts` into a real page, with no other changes.
 4. Wallet / network / copy trading unblock with Phase 6's engine.

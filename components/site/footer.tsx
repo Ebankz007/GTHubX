@@ -1,30 +1,12 @@
 import Link from "next/link";
 import { Logo } from "./logo";
+import { FOOTER_COMPANY, FOOTER_LEGAL, FOOTER_PLATFORM } from "@/lib/public-nav";
 
-const PLATFORM = [
-  { label: "Copy Trading", href: "/copy-trading" },
-  { label: "Investment Packages", href: "/packages" },
-  { label: "Traders", href: "/traders" },
-  { label: "Referral Network", href: "/network" },
-  { label: "Community", href: "/community" },
-  { label: "Education", href: "/education" },
-];
-
-const COMPANY = [
-  { label: "About Us", href: "/about" },
-  { label: "Contact", href: "/contact" },
-  { label: "FAQ", href: "/faq" },
-  { label: "Blog", href: "/blog" },
-  { label: "Login", href: "/login" },
-  { label: "Join Now", href: "/register" },
-];
-
-const LEGAL = [
-  { label: "Risk Disclosure", href: "/legal/risk-disclosure" },
-  { label: "Terms of Service", href: "/legal/terms" },
-  { label: "Privacy Policy", href: "/legal/privacy" },
-  { label: "Cookie Policy", href: "/legal/cookies" },
-];
+// Rendered straight from the shared nav module — this footer used to keep a
+// private copy of these lists that disagreed with the navbar and the seed.
+const PLATFORM = FOOTER_PLATFORM;
+const COMPANY = FOOTER_COMPANY;
+const LEGAL = FOOTER_LEGAL;
 
 export function Footer() {
   const year = new Date().getFullYear();
