@@ -11,7 +11,7 @@
 | **2. Database + engine** | Prisma schema · migration · seed · port Aglotrends engine · integer-cents money | ✅ 2026-10-14 |
 | **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ✅ 2026-10-14 |
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
-| **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings/community moderation landed; KYC (needs Henry), content, finance, reports pending |
+| **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings/community moderation/reports landed; KYC (needs Henry), content, finance pending |
 | **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ⬜ |
 | **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | ⬜ |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
@@ -425,11 +425,48 @@ and **gone from the feed** → removed → restored and **back on the feed** →
 comment hide/restore, `TRADER_ADMIN` 307'd off the page and 403'd by the API, unknown id
 404, empty patch 400, and the change visible on the audit page.
 
+## Phase 5b — reports (2026-10-14)
+
+**What this is:** the dashboard answers "what is true right now"; reports answers "how
+has it moved". Every figure is aggregated from live rows on each page load — no chart
+library, no sample numbers, and the page says so in plain text at the bottom.
+
+**Landed**
+- `app/admin/(protected)/reports/page.tsx` — membership breakdown, KYC + email
+  verification, account roles, **daily signup series** (7/30/90 day), top countries,
+  support queue (by status and priority, plus the oldest open ticket and its age),
+  community by status, admin activity by audited action.
+- `lib/reports.ts` — `dayKey` + `dailySeries`, extracted from the page **so they can be
+  tested at all** (a server component is unreachable from Vitest).
+- `tests/reports.test.ts` — 8 tests. The load-bearing one: **a day with no activity must
+  render as zero, not vanish**. A gap that disappears reads as "the data ends here" and
+  makes a quiet day indistinguishable from missing data.
+- Nav: Reports → `/admin/reports`, permission `reports` (SUPER_ADMIN, FINANCE_ADMIN,
+  NETWORK_ADMIN).
+
+**Two assertion traps caught live**
+1. **React splits interpolated prose with comment nodes.** `Last {days} days` renders as
+   `Last <!-- -->7<!-- --> days`, so matching on the sentence failed while the code was
+   right. The active range is now also exposed as `data-range={days}` — **assert on
+   attributes, not interpolated text**.
+2. **My own test expectation was backwards** (series runs oldest→newest, so `[1,0,2]`,
+   not `[0,2,1]`). The code was correct; the assertion was not.
+
+**Verification**
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test` | ✅ **129/129 green** (17 files, +8 reports) |
+| Live smoke (cold start + verified clean shutdown) | ✅ **74/74** |
+
+Reports coverage: superadmin reaches the page; `TRADER_ADMIN` and `SUPPORT_ADMIN` (neither
+holds `reports`) are 307'd; `?days=7` selects the 7-day range; an unknown `?days=99999`
+falls back to 30 rather than producing an empty chart; the live-data statement is present.
+
 ## Next — Phase 5b
 1. **KYC review** — blocked on Henry: no intake path exists yet (the member page
    deliberately defers to Phase 7 adapters), and KYC is regulatory-adjacent, so document
    requirements and PII handling are his call, not something to invent.
 2. Ops: deposits/withdrawals review (needs Phase 7 payment adapters to have rows).
 3. Content: blog, FAQ, media, messages — needs Henry's copy.
-4. Superadmin: reports.
-5. Wallet / network / copy trading unblock with Phase 6's engine.
+4. Wallet / network / copy trading unblock with Phase 6's engine.

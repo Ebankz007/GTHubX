@@ -14,8 +14,8 @@ export type AdminNavItem = {
  * is the gate.
  *
  * Areas not yet built (kyc, deposits, withdrawals, packages, copy, network,
- * content, blog, faq, media, messages, reports) are absent rather than listed
- * with dead hrefs.
+ * content, blog, faq, media, messages) are absent rather than listed with dead
+ * hrefs.
  */
 export const adminNavItems: AdminNavItem[] = [
   {
@@ -41,6 +41,12 @@ export const adminNavItems: AdminNavItem[] = [
     label: "Team",
     description: "Admin accounts and roles",
     permission: "team",
+  },
+  {
+    href: "/admin/reports",
+    label: "Reports",
+    description: "Breakdowns and trends",
+    permission: "reports",
   },
   {
     href: "/admin/settings",
