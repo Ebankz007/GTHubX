@@ -11,7 +11,7 @@
 | **2. Database + engine** | Prisma schema · migration · seed · port Aglotrends engine · integer-cents money | ✅ 2026-10-14 |
 | **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ✅ 2026-10-14 |
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
-| **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings landed; KYC (needs Henry), content, finance, reports pending |
+| **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings/community moderation landed; KYC (needs Henry), content, finance, reports pending |
 | **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ⬜ |
 | **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | ⬜ |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
@@ -385,8 +385,48 @@ valid save returns 200, unknown key 404, non-object value 400, missing permissio
 **the saved value round-trips into the rendered form**, and the change appears on the
 audit page.
 
+## Phase 5b — community moderation (2026-10-14)
+
+**The gap this closes:** Phase 4 let members publish posts and comments, but no admin
+could take anything down. Members had a megaphone with no mute button.
+
+**Landed**
+- `PATCH /api/admin/community/posts/[id]` — visibility (`PUBLISHED`/`HIDDEN`/`REMOVED`)
+  and `isPinned`; `PATCH /api/admin/community/comments/[id]` — visibility only.
+- `updateCommunityPostSchema` / `updateCommunityCommentSchema`; status values **derived
+  from the generated Prisma enum** (`Object.values(PostStatus)`) so the validator, the
+  controls and the schema cannot drift apart.
+- `app/admin/(protected)/community/page.tsx` — posts + comments with status filter chips
+  carrying live counts; `components/admin/community-actions.tsx` renders exactly the
+  transitions *away* from the current state, so the buttons cannot invent a state.
+- Nav: Community → `/admin/community`, permission `community` (SUPER_ADMIN, CONTENT_ADMIN,
+  SUPPORT_ADMIN).
+- `POST /api/community/posts/[id]/comments` now returns `id`, mirroring the post route.
+
+**No migration was needed.** `PostStatus` already had `HIDDEN`/`REMOVED` and the member
+feed already filtered on `status: "PUBLISHED"` — moderation takes effect on the member's
+next request with **zero member-side change**.
+
+**Moderation is non-destructive by design.** `REMOVED` hides a post from members the same
+way `HIDDEN` does, but the row survives and any state restores to `PUBLISHED`. Because
+nothing is deleted, there is no destructive control and no "are you sure" gate to get
+wrong. Content is never destroyed from this surface.
+
+**Verification**
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test` | ✅ **121/121 green** |
+| Live smoke (cold start + verified clean shutdown) | ✅ **68/68** |
+
+Smoke creates the probe post and comment **through the real Phase 4 member API** rather
+than seeding SQL, then proves the full round-trip: visible on the member feed → hidden
+and **gone from the feed** → removed → restored and **back on the feed** → pinned. Plus
+comment hide/restore, `TRADER_ADMIN` 307'd off the page and 403'd by the API, unknown id
+404, empty patch 400, and the change visible on the audit page.
+
 ## Next — Phase 5b
-1. **KYC review** — blocked on Henry: there is no intake path yet (the member page
+1. **KYC review** — blocked on Henry: no intake path exists yet (the member page
    deliberately defers to Phase 7 adapters), and KYC is regulatory-adjacent, so document
    requirements and PII handling are his call, not something to invent.
 2. Ops: deposits/withdrawals review (needs Phase 7 payment adapters to have rows).

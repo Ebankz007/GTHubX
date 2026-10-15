@@ -48,7 +48,7 @@ export async function POST(
     return Response.json({ error: "Post not found" }, { status: 404 });
   }
 
-  await prisma.communityComment.create({
+  const comment = await prisma.communityComment.create({
     data: {
       postId: post.id,
       authorId: user.id,
@@ -57,5 +57,10 @@ export async function POST(
     },
   });
 
-  return Response.json({ ok: true, message: "Comment added." }, { status: 201 });
+  // Mirror the post route: return the id so the caller can reference what it
+  // just created (and so moderation can target it without a second query).
+  return Response.json(
+    { ok: true, id: comment.id, message: "Comment added." },
+    { status: 201 },
+  );
 }

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { MAX_PASSWORD_BYTES } from "@/lib/password";
+import { PostStatus } from "@/lib/generated/prisma/enums";
 
 /** Normalise (trim + lowercase) then validate. Stored emails are always lowercase. */
 export const emailSchema = z
@@ -158,6 +159,47 @@ export const updateAdminSchema = z
   });
 
 export type UpdateAdminInput = z.infer<typeof updateAdminSchema>;
+
+/* ---------------------------------------------------- community moderation -- */
+
+/**
+ * Status values are derived from the generated Prisma enum rather than
+ * re-typed here — a hand-written list of `PUBLISHED | HIDDEN | REMOVED` would
+ * be a second copy that goes stale the moment the schema gains a value.
+ */
+const POST_STATUS_LIST = Object.values(PostStatus) as [string, ...string[]];
+
+/**
+ * The moderation statuses, as a plain list for UI use. Derived from the
+ * generated enum so the controls and the validator cannot disagree.
+ */
+export const POST_STATUSES = POST_STATUS_LIST as unknown as readonly string[];
+
+/**
+ * Moderation of a community post: change visibility, pin it, or both.
+ * Rejects an empty patch so we never write a no-op audit entry.
+ *
+ * `REMOVED` is stronger than `HIDDEN` but **still not a deletion** — nothing is
+ * destroyed by moderation, and any state can be restored to `PUBLISHED`.
+ */
+export const updateCommunityPostSchema = z
+  .object({
+    status: z.enum(POST_STATUS_LIST).optional(),
+    isPinned: z.boolean().optional(),
+  })
+  .refine((v) => v.status !== undefined || v.isPinned !== undefined, {
+    message: "Nothing to update",
+  });
+
+/** Comments are moderated by status only — there is nothing to pin. */
+export const updateCommunityCommentSchema = z.object({
+  status: z.enum(POST_STATUS_LIST),
+});
+
+export type UpdateCommunityPostInput = z.infer<typeof updateCommunityPostSchema>;
+export type UpdateCommunityCommentInput = z.infer<
+  typeof updateCommunityCommentSchema
+>;
 
 /** First human-readable message from a Zod error. */
 export function firstError(error: z.ZodError): string {
