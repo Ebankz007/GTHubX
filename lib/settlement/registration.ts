@@ -122,6 +122,13 @@ export async function settleRegistrationPayment(args: {
   readonly paymentId: string;
   readonly adminId?: string | null;
   readonly gatewayTxid?: string | null;
+  /**
+   * The on-chain transaction hash, when the caller has one. Distinct from
+   * `gatewayTxid`, which is the gateway's own identifier for the checkout: the
+   * two are different facts about the same payment, and overwriting one with
+   * the other loses the reference an operator needs to reconcile a transfer.
+   */
+  readonly txHash?: string | null;
 }): Promise<RegistrationSettlementResult> {
   const { client, paymentId } = args;
 
@@ -160,6 +167,7 @@ export async function settleRegistrationPayment(args: {
       status: "PAID",
       paidAt: new Date(),
       gatewayTxid: args.gatewayTxid ?? payment.gatewayTxid,
+      txHash: args.txHash ?? payment.txHash,
     },
   });
 

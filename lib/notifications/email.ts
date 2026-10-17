@@ -40,6 +40,4 @@ export async function sendEmail(message: EmailMessage): Promise<EmailResult> {
 }
 
 /** Absolute site origin for links in emails. */
-export function siteOrigin(): string {
-  return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3500";
-}
+export { siteOrigin } from "@/lib/site";

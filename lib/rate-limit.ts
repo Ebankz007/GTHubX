@@ -87,4 +87,8 @@ export const RATE_LIMITS = {
   profileUpdate: { limit: 20, windowMs: 15 * 60 * 1000 },
   /** Tighter than member login — the admin surface is a smaller, better-defined target. */
   adminLogin: { limit: 5, windowMs: 15 * 60 * 1000 },
+  /** Each call may issue a gateway invoice, so it is bounded per member. */
+  checkoutRequest: { limit: 20, windowMs: 60 * 60 * 1000 },
+  /** The gateway legitimately retries; this only blunts brute force on the secret. */
+  gatewayWebhook: { limit: 300, windowMs: 15 * 60 * 1000 },
 } as const;

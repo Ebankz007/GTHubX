@@ -5,6 +5,7 @@ import { generateToken, hashToken } from "@/lib/tokens";
 import { registerSchema, firstError } from "@/lib/validators";
 import { rateLimit, rateLimitKey, RATE_LIMITS } from "@/lib/rate-limit";
 import { sendEmail, siteOrigin } from "@/lib/notifications/email";
+import { attachCheckoutToPayment } from "@/lib/payments/checkout";
 import { PLATFORM_FEE_CENTS, REGISTRATION_GROSS_CENTS } from "@/lib/engine";
 
 const VERIFY_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
@@ -60,7 +61,7 @@ export async function POST(request: Request) {
   const verifyToken = generateToken();
   const paymentRef = `REG-${randomUUID().replace(/-/g, "").slice(0, 20).toUpperCase()}`;
 
-  const user = await prisma.$transaction(async (tx) => {
+  const registration = await prisma.$transaction(async (tx) => {
     const created = await tx.user.create({
       data: {
         email,
@@ -77,7 +78,7 @@ export async function POST(request: Request) {
 
     // Charged but not yet paid. Commissions accrue only when this payment is
     // confirmed — never at signup (see lib/settlement/registration.ts).
-    await tx.payment.create({
+    const payment = await tx.payment.create({
       data: {
         userId: created.id,
         purpose: "REGISTRATION",
@@ -87,6 +88,7 @@ export async function POST(request: Request) {
         status: "PENDING",
         paymentRef,
       },
+      select: { id: true },
     });
 
     await tx.userSession.create({
@@ -98,7 +100,7 @@ export async function POST(request: Request) {
       },
     });
 
-    return created;
+    return { created, paymentId: payment.id };
   });
 
   const link = `${siteOrigin()}/verify-email?token=${verifyToken}`;
@@ -106,6 +108,16 @@ export async function POST(request: Request) {
     to: email,
     subject: "Verify your Global Traders HubX email",
     text: `Welcome to Global Traders HubX.\n\nVerify your email to activate your account:\n${link}\n\nThis link expires in 24 hours.`,
+  });
+
+  // Open the payment checkout now, so the member's registration page has a
+  // live link the moment they land on it. Best effort and AFTER the commit:
+  // neither an email nor a payment gateway may roll back an account, and the
+  // member can always ask for a checkout on demand from the dashboard.
+  await attachCheckoutToPayment({
+    paymentId: registration.paymentId,
+    amountCents: REGISTRATION_GROSS_CENTS,
+    purpose: "REGISTRATION",
   });
 
   return Response.json(

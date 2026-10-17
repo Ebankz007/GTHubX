@@ -12,8 +12,8 @@
 | **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ✅ 2026-10-14 |
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
 | **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings/community moderation/reports landed; KYC (needs Henry), content, finance pending |
-| **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | 🟡 2026-10-17 — **6a** money-write spine + **6b** rank milestones + **6c** payouts all live (PAID/FLAGGED/SKU, hold/refund/mark-paid all smoke-proven); flagged-award admin flow is the last Phase 6 item, Phase 7 blocked on Henry |
-| **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | ⬜ |
+| **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ✅ 2026-10-18 — **6a** money-write spine · **6b** rank milestones · **6c** payouts · **6d** flagged-award admin flow; closed, all four smoke-proven |
+| **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | 🟡 2026-10-18 — **7a** Pay2Crypto rail live (register → invoice → checkout → webhook → settlement, smoke-proven); **7b** Resend + **7c** KYC next |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
 
 ## Phase 1 — done (2026-10-11)
@@ -774,12 +774,95 @@ REJECTED|1`; both audit rows (`rank-award.mark-paid`, `rank-award.reject`);
 guard that refuses to pay a cash award with no recorded amount (corruption, loudly
 refused) rather than a silent `?? 0`. Every money assertion passed first run.
 
+## Phase 7a — the Pay2Crypto rail (2026-10-18)
+
+Henry named the vendors: **Pay2Crypto** for payments, **Resend** for email. Phase 7
+opens with the money rail, because a registration fee nobody can pay is a business
+that cannot start.
+
+**The shape.** `register → PENDING invoice carrying a reference → checkout link
+attached → the member pays on-chain → the gateway calls back → the 6a spine
+settles`. Nothing in that chain trusts the browser: the amount, the reference and
+the settlement are all the server's, and the only place a payment becomes money is
+the webhook.
+
+- **`lib/payments/pay2crypto.ts`** — the wire contract, pure and unit-pinned:
+  `POST {api}/v1/payment-requests` with `amount` as a **2-decimal string** (money
+  crosses this boundary as text, never as a float), `asset`/`network`
+  (`USDT`/`trc20`), `reference`, `return_url`; response `checkout_url` + `token`;
+  webhook `{payment_ref, tx_hash, status, payment_amount}`. Non-ASCII is avoided
+  in gateway-bound strings — a mangled encoding is an unpayable invoice.
+- **`lib/payments/checkout.ts`** — attach (best effort, after the account commits)
+  and refresh. **Refresh expires the old row and creates a new one; it never
+  rewrites a reference on an existing row.** The reference is the webhook join key:
+  rewriting it would strand a member who had already paid the old invoice with
+  money that lands against a reference that no longer exists.
+- **`lib/payments/webhook.ts`** — five load-bearing rules: non-final statuses are
+  acknowledged, never applied; the amount is verified when the gateway echoes it;
+  PAID is terminal and idempotent (flip + credits are one transaction, so a
+  re-delivery is a pure no-op); **an EXPIRED invoice is still payable** (expiry is
+  a UI state — the money arrived, it must be recorded); **a registration settles
+  once per member, ever** (two live references must not pay the upline twice).
+- **`app/api/webhooks/pay2crypto/route.ts`** — secret via `x-pay2crypto-secret`
+  or `?secret=`, constant-time compare, **fails closed when unset**, rate-limited.
+- **Member surface** — `GET /api/account/payments`, `POST
+  /api/account/payments/[id]/checkout` (ownership checked first ⇒ 404 for someone
+  else's invoice), `/dashboard/registration` + `RegistrationCheckout`. The page
+  states the rail (USDT/TRC20) and the total from the real row — `USDT 55.00`, not
+  a `$` that would be a lie about the asset.
+- **Mock mode** is dev-only; production without a token answers `503
+  gateway_not_configured` rather than pretending to take money.
+
+**The bug the smoke caught.** `settleRegistrationPayment` accepted only
+`gatewayTxid`, and the webhook passed the **on-chain hash** into it — clobbering
+the gateway's own checkout token and leaving `txHash` null forever (the page's
+"On-chain transaction" line could never render). Two different facts about one
+payment were sharing one field. Fixed: the spine takes an optional `txHash`, writes
+both, and the webhook no longer overwrites the gateway id. Every unit test passed
+throughout — only the live run could see it, because the assertion was about what
+the *database* held after a real callback, not about what a function returned.
+
+| Gate | Result |
+|---|---|
+| `pnpm exec tsc --noEmit` | ✓ clean |
+| `pnpm exec vitest run` | ✓ **226/226 green** (23 files, +29 pay2crypto contract) |
+| Live smoke Phase 7a (cold start, clean shutdown) | ✓ **33/33** |
+| Live smoke Phase 6d (regression, post-spine-change) | ✓ 38/38 |
+
+Smoke proves, end to end: register ⇒ PENDING 5500/500 invoice with a mock checkout
+link + gateway id; both member endpoints 401 unauthenticated; sign-in ⇒ payments
+list; page renders TRC20 + `USDT 55.00`; a stale row refreshes into a **new**
+invoice with the old row preserved EXPIRED; webhook with no secret ⇒ 401, wrong
+secret ⇒ 401, unknown ref ⇒ 404, non-final ⇒ 200 **not applied**, short amount ⇒
+400 **not settled**; the EXPIRED invoice settles when the money lands
+(`PAID|0xstaleinvoice|kept` — hash recorded **and** gateway id preserved);
+registration settled exactly once; PlatformFee `500|SETTLED`; RANK pool +400,
+LEADERSHIP +350; replay changes nothing (no second registration, fee, or accrual);
+the second invoice is recorded PAID with `already_registered` and settles nothing;
+another member's invoice ⇒ 404; `/admin/payments` lists the settled row.
+
+**First-run friction (4 of 5 failures were harness-only).** (1) The stale-link
+UPDATE used a bare `now() - interval '2 hours'` — Prisma stores UTC in a
+`timestamp` column while the psql session renders **local** time (+04), so the
+"stale" row was written *two hours into the future* and looked brand new. The fix
+is to pin the frame: `(now() at time zone 'UTC') - interval '2 hours'`. (2) The
+page assertion demanded `$55.00` from a page that correctly says `USDT 55.00`.
+(3–4) Both cascaded from (1). The fifth was the real bug above.
+
 ## Next
-1. **Phase 7: gateway, KYC adapters, SMTP** — blocked on Henry: gateway choice, KYC
-   document requirements + PII posture, SMTP credentials.
-2. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) now land ~2.5×
-   faster than planned against the $4.00 rank pool. Phase 6d makes the consequence
-   *visible*: every clear is a pool-refusal the admin must chase — a rescale or a
-   rank-pool carve increase is the durable fix.
-3. **Phase 6 is now closed**: 6a settlement · 6b ranks · 6c payouts · 6d flagged
-   awards. No open slices.
+1. **Phase 7b — Resend.** Real transport behind the existing
+   `sendEmail({to,subject,text,html?}) → {delivered, reason}` interface, a template
+   module, and the flows that need it: verify-email, password reset, payment
+   confirmed. Honest in production when the key is absent — a silent success is how
+   members end up locked out of an unverified account.
+2. **Phase 7c — KYC pipeline.** Requirement constant, submission route + form,
+   admin review queue, decision route. **Henry's call, still open:** which document
+   types are required and where PII is stored (document *files* are the sensitive
+   part; the machine is built with policy in one editable module).
+3. **Live credentials** — a Pay2Crypto token and a Resend API key, for the first
+   real (non-mock) payment and the first real email.
+4. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) land ~2.5×
+   faster than planned against the $4.00 rank pool, so clears become pool-refusals
+   an admin must chase. A rescale or a rank-pool carve increase is the durable fix.
+5. **Open elsewhere:** aaPanel deploy (server/domain/scope), AmplifiedTraders remote
+   (public or private), and revoking the pasted PAT.

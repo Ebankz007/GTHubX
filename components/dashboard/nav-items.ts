@@ -19,6 +19,11 @@ export const navItems: NavItem[] = [
     description: "Account status and recent activity",
   },
   {
+    href: "/dashboard/registration",
+    label: "Registration",
+    description: "Membership fee and checkout",
+  },
+  {
     href: "/dashboard/transactions",
     label: "Transactions",
     description: "Your ledger history",
