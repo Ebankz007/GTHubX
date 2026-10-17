@@ -16,12 +16,19 @@ export type AuditInput = {
 /**
  * Append an audit record for a sensitive admin/financial action.
  *
+ * `client` is optional so a caller mid-transaction can write its audit row
+ * **inside that transaction** — an approval that commits without its audit
+ * entry is exactly the case the trail exists to catch.
+ *
  * Throws on failure — an audit trail that silently drops entries is worse than
  * no trail, because it looks complete. Callers that must not fail on audit
  * should catch explicitly.
  */
-export async function recordAudit(input: AuditInput): Promise<void> {
-  await prisma.auditLog.create({
+export async function recordAudit(
+  input: AuditInput,
+  client: Prisma.TransactionClient | typeof prisma = prisma,
+): Promise<void> {
+  await client.auditLog.create({
     data: {
       adminId: input.adminId ?? null,
       action: input.action,

@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { hashPassword } from "@/lib/password";
 import { generateToken, hashToken } from "@/lib/tokens";
 import { registerSchema, firstError } from "@/lib/validators";
 import { rateLimit, rateLimitKey, RATE_LIMITS } from "@/lib/rate-limit";
 import { sendEmail, siteOrigin } from "@/lib/notifications/email";
+import { PLATFORM_FEE_CENTS, REGISTRATION_GROSS_CENTS } from "@/lib/engine";
 
 const VERIFY_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
 
@@ -50,30 +52,56 @@ export async function POST(request: Request) {
   }
 
   const passwordHash = await hashPassword(password);
-  const user = await prisma.user.create({
-    data: {
-      email,
-      passwordHash,
-      fullName,
-      phone: phone || null,
-      country: country || null,
-      sponsorId,
-      status: "PENDING",
-    },
+
+  // Account, wallet and the registration payment are one unit: a member with a
+  // user row but no wallet and no payment cannot ever be settled. The
+  // verification token joins them; the email is sent after the commit, because
+  // an email must never be able to roll back an account.
+  const verifyToken = generateToken();
+  const paymentRef = `REG-${randomUUID().replace(/-/g, "").slice(0, 20).toUpperCase()}`;
+
+  const user = await prisma.$transaction(async (tx) => {
+    const created = await tx.user.create({
+      data: {
+        email,
+        passwordHash,
+        fullName,
+        phone: phone || null,
+        country: country || null,
+        sponsorId,
+        status: "PENDING",
+      },
+    });
+
+    await tx.wallet.create({ data: { userId: created.id, balanceCents: 0 } });
+
+    // Charged but not yet paid. Commissions accrue only when this payment is
+    // confirmed — never at signup (see lib/settlement/registration.ts).
+    await tx.payment.create({
+      data: {
+        userId: created.id,
+        purpose: "REGISTRATION",
+        amountCents: REGISTRATION_GROSS_CENTS,
+        platformFeeCents: PLATFORM_FEE_CENTS,
+        currency: "USDT",
+        status: "PENDING",
+        paymentRef,
+      },
+    });
+
+    await tx.userSession.create({
+      data: {
+        userId: created.id,
+        tokenHash: hashToken(verifyToken),
+        purpose: "EMAIL_VERIFY",
+        expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
+      },
+    });
+
+    return created;
   });
 
-  // Verification token, stored hashed as a purpose-scoped session row.
-  const token = generateToken();
-  await prisma.userSession.create({
-    data: {
-      userId: user.id,
-      tokenHash: hashToken(token),
-      purpose: "EMAIL_VERIFY",
-      expiresAt: new Date(Date.now() + VERIFY_TTL_MS),
-    },
-  });
-
-  const link = `${siteOrigin()}/verify-email?token=${token}`;
+  const link = `${siteOrigin()}/verify-email?token=${verifyToken}`;
   await sendEmail({
     to: email,
     subject: "Verify your Global Traders HubX email",

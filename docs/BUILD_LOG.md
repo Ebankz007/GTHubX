@@ -12,7 +12,7 @@
 | **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ✅ 2026-10-14 |
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
 | **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings/community moderation/reports landed; KYC (needs Henry), content, finance pending |
-| **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ⬜ |
+| **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | 🟡 2026-10-17 — money-write spine landed (register opens wallet + pending payment; admin confirm settles direct commission, ledger, pools); rank milestones + payouts pending |
 | **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | ⬜ |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
 
@@ -520,11 +520,64 @@ Smoke coverage: all 17 public routes → 200; four legacy paths → 404; unknown
 homepage advertises `/copy-trading` and `/legal/terms` and does **not** advertise the old
 `/terms`; unpublished pages state "Not yet published" and contain no illustrative content.
 
-## Next — Phase 5b
-1. **KYC review** — blocked on Henry: no intake path exists yet (the member page
-   deliberately defers to Phase 7 adapters), and KYC is regulatory-adjacent, so document
-   requirements and PII handling are his call, not something to invent.
-2. Ops: deposits/withdrawals review (needs Phase 7 payment adapters to have rows).
-3. Content: the 14 public routes exist and wait only on Henry's copy — supplying it moves
-   each one out of `lib/pending-pages.ts` into a real page, with no other changes.
-4. Wallet / network / copy trading unblock with Phase 6's engine.
+## Phase 6a — engine integration: the money-write spine (2026-10-17)
+
+For five phases `lib/engine` sat behind 88 passing tests with **zero importers**. No code
+path in the app ever created a `Wallet`. A confirmed payment had nowhere to go. That is
+the entire gap this slice closes.
+
+**One writer, one moment.** Registration is the only event that creates money obligations,
+and an admin confirming the payment is the only event that settles them. No auto-settle on
+signup, no async worker, no cron.
+
+**What one confirm now does** (`lib/settlement/registration.ts`, inside a single
+transaction):
+
+1. `Payment` → PAID — refuses wrong purpose, wrong amount (must equal fee + 500 platform
+   cents), or an already-settled row. Typed `SettlementError` maps to 404/409/400.
+2. `PlatformFee` row for the 500 platform cents, status SETTLED.
+3. `Registration` row recording the whole split:
+   `feeCents 5000 | direct 1500 | generation 500 | rank 400 | leadership 350`.
+4. Direct commission to the sponsor: `Commission` PAID 1500 + `Wallet` upsert + append-only
+   `LedgerEntry` (CREDIT, `balanceAfterCents` 1500, idempotency key
+   `reg:{paymentId}:direct`).
+5. Generation commissions for every Active upline in gens 2–6, each keyed
+   `reg:{paymentId}:gen{n}` — those keys are the whole defence against a double settle.
+6. Rank 400 and leadership 350 accrued into `BonusPool` with matching `PoolLedgerEntry`
+   ACCRUAL rows.
+
+**Wallet opens at signup, at zero.** Every new user gets a `Wallet` in the same
+transaction that creates them, so settlement is always an update plus a ledger append —
+never a branch that might forget to create the wallet on the first credit.
+
+**The tree that fits in the hole.** One referred member has no generation 2+ above the
+sponsor, so the confirm response carries `generations: []`,
+`generationAllocatedCents: 500`, `generationPaidCents: 0`. The share is **recorded as
+unallocated** — not redistributed, not silently absorbed by the direct referrer. Where it
+belongs is a business rule, not an engineering one.
+
+**Where the money path stops.** `lib/engine` still has no other importers. There is no
+gateway, no member-facing payment UI, no withdrawal, no payout, no rank milestone
+evaluation. Those are 6b and Phase 7, and none of them are invented here.
+
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test` | ✅ **147/147 green** (19 files, +8 settlement) |
+| Live smoke (cold start, clean shutdown) | ✅ **32/32** |
+
+Smoke: register sponsor → wallet at 0 + PENDING `5500|500|PENDING`; register referred
+member → sponsorId recorded and **zero** commissions before confirm; SUPER_ADMIN confirms →
+`1500|PAID`, wallet 1500, ledger `balanceAfter` 1500, registration row
+`5000|1500|500|400|350`, platform fee SETTLED, pools ≥400/≥350; double confirm → 409;
+SUPPORT_ADMIN (no `deposits`) → 403 and the page 307s.
+
+## Next — Phase 6b
+1. **Rank milestone evaluation on settle** — `engine/ranks.ts` against
+   `highestAssociateRank` / `highestLeadershipRank`. Open for Henry: absolute rewards
+   ($14 → $20,000) now land ~2.5× faster than the original plan assumed, because the rank
+   pool moved from $1.60 to $4.00 per registration. Rescale is his call, not mine.
+2. **Payouts / withdrawals** — request → review → ledger row, which needs Phase 7's payment
+   adapters before money can actually leave.
+3. Still blocked on Henry: gateway choice, KYC document requirements + PII posture, SMTP
+   credentials, and the business content for the 14 published-and-waiting public pages.
