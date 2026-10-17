@@ -2,7 +2,9 @@ import { prisma } from "@/lib/prisma";
 import { generateToken, hashToken } from "@/lib/tokens";
 import { forgotPasswordSchema, firstError } from "@/lib/validators";
 import { rateLimit, rateLimitKey, RATE_LIMITS } from "@/lib/rate-limit";
-import { sendEmail, siteOrigin } from "@/lib/notifications/email";
+import { sendEmail } from "@/lib/notifications/email";
+import { passwordResetTemplate } from "@/lib/notifications/templates";
+import { siteName, siteOrigin } from "@/lib/site";
 
 const RESET_TTL_MS = 1000 * 60 * 60; // 1 hour
 
@@ -52,8 +54,11 @@ export async function POST(request: Request) {
     const link = `${siteOrigin()}/reset-password?token=${token}`;
     await sendEmail({
       to: email,
-      subject: "Reset your Global Traders HubX password",
-      text: `A password reset was requested for your account.\n\nReset it here (expires in 1 hour):\n${link}\n\nIf this wasn't you, you can ignore this email.`,
+      ...passwordResetTemplate({
+        siteName: siteName(),
+        url: link,
+        ttlMinutes: RESET_TTL_MS / 60_000,
+      }),
     });
   }
 

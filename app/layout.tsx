@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Sora, Manrope, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { siteName, siteOrigin } from "@/lib/site";
 import "./globals.css";
 
 const sora = Sora({
@@ -21,8 +22,10 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3500";
-const siteName = process.env.NEXT_PUBLIC_SITE_NAME ?? "Global Traders HubX";
+// The site's own name and origin come from one module, shared with the emails
+// we send: a member must not be told "Verify your X email" and then land on a
+// page branded Y.
+const siteUrl = siteOrigin();
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -32,7 +35,7 @@ export const metadata: Metadata = {
   },
   description:
     "Global Traders HubX is a digital trading community connecting traders and investors through copy trading, structured participation, referral networking, and a global trader community.",
-  applicationName: siteName,
+  applicationName: siteName(),
   keywords: [
     "trading community",
     "copy trading",
@@ -42,10 +45,10 @@ export const metadata: Metadata = {
     "trading education",
     "global trading hub",
   ],
-  authors: [{ name: siteName }],
+  authors: [{ name: siteName() }],
   openGraph: {
     type: "website",
-    siteName,
+    siteName: siteName(),
     title: "Global Traders HubX — Connect. Copy. Trade. Grow.",
     description:
       "A global community for traders and investors — copy trading, participation, networking, and education in one hub.",

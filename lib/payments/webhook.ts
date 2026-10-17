@@ -26,6 +26,7 @@ import { prisma } from "@/lib/prisma";
 import { PLATFORM_FEE_CENTS } from "@/lib/engine";
 import { creditWallet } from "@/lib/settlement/wallet";
 import { settleRegistrationPayment } from "@/lib/settlement/registration";
+import { notifyRegistrationPaid } from "@/lib/notifications/member";
 import {
   PaymentGatewayError,
   amountMismatchMessage,
@@ -199,6 +200,10 @@ async function settleRegistration(
       txHash,
     });
   });
+
+  // After the commit, never inside it: the member is told about a settlement
+  // that has already happened, and a mail failure cannot undo it.
+  await notifyRegistrationPaid({ paymentId: payment.id });
 
   return {
     applied: true,

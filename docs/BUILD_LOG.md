@@ -13,7 +13,7 @@
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
 | **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings/community moderation/reports landed; KYC (needs Henry), content, finance pending |
 | **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ✅ 2026-10-18 — **6a** money-write spine · **6b** rank milestones · **6c** payouts · **6d** flagged-award admin flow; closed, all four smoke-proven |
-| **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | 🟡 2026-10-18 — **7a** Pay2Crypto rail live (register → invoice → checkout → webhook → settlement, smoke-proven); **7b** Resend + **7c** KYC next |
+| **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | 🟡 2026-10-18 — **7a** Pay2Crypto rail live · **7b** Resend mail layer live (verify, reset, payment-confirmed); **7c** KYC next |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
 
 ## Phase 1 — done (2026-10-11)
@@ -849,18 +849,94 @@ is to pin the frame: `(now() at time zone 'UTC') - interval '2 hours'`. (2) The
 page assertion demanded `$55.00` from a page that correctly says `USDT 55.00`.
 (3–4) Both cascaded from (1). The fifth was the real bug above.
 
+## Phase 7b — email that is real, or honestly not (2026-10-18)
+
+Henry named **Resend**. The Phase 7 stub could not send anything: it logged in
+development and reported failure in production, which was honest and useless the
+day a real member signed up. This slice makes the adapter real and keeps the
+honesty.
+
+**Three behaviours, and the difference between them is the point.**
+- **Configured** (`RESEND_API_KEY` *and* `EMAIL_FROM`) → send through Resend. A
+  refusal comes back as `delivered: false` carrying the provider's own status and
+  message, so an unverified sender domain is diagnosable from the log alone.
+- **Not configured, development** → log the whole message, link included, and
+  report `dev_logged`. Developing a flow that needs a working link must not
+  require a provider account.
+- **Not configured, production** → report `not_configured` and warn. **No fake
+  success in production.** A silent "sent" is how a member ends up locked out of
+  an account they can never verify.
+
+`sendEmail` never throws. It runs after an account or a payment has already been
+written, and a mail provider must not be able to undo that.
+
+**Structure.** `lib/notifications/resend.ts` is the wire contract:
+`buildResendRequest` is pure and unit-pinned (one POST, `to` as an array, `html`
+omitted rather than sent empty, bearer auth), and `sendViaResend` is the only
+function that touches the network — it returns a result for every failure mode,
+including a thrown transport error. `fetch` rather than the Resend SDK: one POST
+with a stable body does not justify a dependency, a lockfile entry and a
+supply-chain surface. `lib/notifications/templates.ts` holds pure functions from
+facts to `{subject, text, html}` — no env, no clock, no cents; the amount is
+formatted by `lib/money` and passed in as a string. `lib/notifications/member.ts`
+is the post-settlement notification, best effort by design. `lib/site.ts` gained
+`siteName()`, now the single source for the product name in both the site metadata
+(`app/layout.tsx`) and every email — a member must not be told "Verify your X
+email" and land on a page branded Y.
+
+**Two rules every template obeys, and the tests enforce.** The link appears in the
+**plain-text** part too: HTML is a courtesy, the URL is the product, and a member
+whose client strips markup must still be able to finish the flow. And anything a
+member or a request supplied is escaped in the HTML — a display name is user
+input, and an email client is a browser. Layout is tables and inline styles only,
+with a test that refuses `<div>`.
+
+**The settlement email is sent after the commit, never inside it**, and the amount
+is read back from the payment row rather than from the gateway payload: the member
+is told what we recorded, not what was claimed.
+
+| Gate | Result |
+|---|---|
+| `pnpm exec tsc --noEmit` | ✓ clean |
+| `pnpm exec vitest run` | ✓ **266/266 green** (26 files, +40) |
+| Live smoke Phase 7b (cold start, clean shutdown) | ✓ **22/22** |
+| Live smoke Phase 7a / 6d (regression, post-webhook change) | ✓ 33/33 · 38/38 |
+
+**The smoke proves the email by consuming it.** No provider account is needed,
+because the email's payload *is* the next step of the flow. The harness registers
+a member, reads the message the dev transport logged, pulls the verification link
+out of it and activates the account with that link (then proves the link is
+single-use); does the same with a password reset, signing in with the new password
+and failing with the old one; and finally confirms a registration through the
+gateway webhook and asserts the member is told about the settlement, with the
+amount we recorded, **exactly once** — a replayed webhook sends no second email.
+The run asserts up front that no Resend key is configured, so it cannot quietly be
+testing something else.
+
+**What this does not prove:** that Resend accepts our request. That needs a live
+key, and is pinned as far as it can be by unit tests against the wire shape.
+
+**First-run friction: one harness bug, and it was a repeat.** `C-Status` in the
+new harness had no `$extraHeaders` parameter, so the secret handed to it went
+nowhere and the webhook answered 401 — the same class as the 6c lesson ("a helper
+parameter never wired to the underlying call fails silently"), now on its second
+offence. The fix is one line. The lesson is that a copied harness inherits the
+*call sites* but not the *signature*, and the signature is where the silence lives.
+
+**Two things deliberately not built, because they are policy, not code:** no email
+on the overpayment path (a member whose second invoice was recorded-but-not-settled
+gets no automated mail, because promising a refund is Henry's call), and no deposit
+email (nothing creates a deposit invoice yet). Both are recorded as open.
+
 ## Next
-1. **Phase 7b — Resend.** Real transport behind the existing
-   `sendEmail({to,subject,text,html?}) → {delivered, reason}` interface, a template
-   module, and the flows that need it: verify-email, password reset, payment
-   confirmed. Honest in production when the key is absent — a silent success is how
-   members end up locked out of an unverified account.
-2. **Phase 7c — KYC pipeline.** Requirement constant, submission route + form,
+1. **Phase 7c — KYC pipeline.** Requirement constant, submission route + form,
    admin review queue, decision route. **Henry's call, still open:** which document
-   types are required and where PII is stored (document *files* are the sensitive
-   part; the machine is built with policy in one editable module).
-3. **Live credentials** — a Pay2Crypto token and a Resend API key, for the first
+   types are required and where PII lives (document *files* are the sensitive part;
+   the machine is built with the policy in one editable module).
+2. **Live credentials** — a Pay2Crypto token and a Resend API key, for the first
    real (non-mock) payment and the first real email.
+3. **Policy not yet decided:** what an overpaid member is told. Their second
+   invoice is recorded PAID and not settled; today they get no email at all.
 4. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) land ~2.5×
    faster than planned against the $4.00 rank pool, so clears become pool-refusals
    an admin must chase. A rescale or a rank-pool carve increase is the durable fix.

@@ -9,3 +9,14 @@
 export function siteOrigin(): string {
   return process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3500";
 }
+
+/**
+ * The product's display name, as it should appear to a member.
+ *
+ * One source for both the site metadata and every email: a member who is told
+ * "Verify your X email" and lands on a page branded Y has been handed evidence
+ * that the mail is not from us. `app/layout.tsx` reads this too.
+ */
+export function siteName(): string {
+  return process.env.NEXT_PUBLIC_SITE_NAME ?? "Global Traders HubX";
+}
