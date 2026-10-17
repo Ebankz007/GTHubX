@@ -81,6 +81,9 @@ export const RATE_LIMITS = {
   forgotPassword: { limit: 5, windowMs: 60 * 60 * 1000 },
   resetPassword: { limit: 10, windowMs: 60 * 60 * 1000 },
   verifyEmail: { limit: 10, windowMs: 60 * 60 * 1000 },
+  /** Payout requests move money out of a wallet — 10/hour is far above any
+   *  human cadence and caps the damage of a compromised session. */
+  payoutRequest: { limit: 10, windowMs: 60 * 60 * 1000 },
   profileUpdate: { limit: 20, windowMs: 15 * 60 * 1000 },
   /** Tighter than member login — the admin surface is a smaller, better-defined target. */
   adminLogin: { limit: 5, windowMs: 15 * 60 * 1000 },

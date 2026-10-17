@@ -113,6 +113,12 @@ export default async function DashboardPage() {
                   })}`
                 : "No wallet has been opened on this account yet."}
             </p>
+            <Link
+              href="/dashboard/payouts"
+              className="mt-3 inline-block text-sm text-brand"
+            >
+              Request a payout →
+            </Link>
           </CardContent>
         </Card>
 

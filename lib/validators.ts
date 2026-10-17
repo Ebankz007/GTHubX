@@ -100,6 +100,45 @@ export const createMessageSchema = z.object({
   body: z.string().trim().min(1, "Write a message").max(4000, "Message is too long"),
 });
 
+/* ------------------------------------------------------------ payouts ------ */
+
+/**
+ * A member requesting a payout. `amountCents` arrives in integer cents from
+ * the client (`parseAmountToCents`), so this validator never does money
+ * arithmetic — it only checks shape and sign. Whether the amount is
+ * *covered* is decided atomically by `requestPayout` against the wallet row.
+ */
+export const requestPayoutSchema = z.object({
+  amountCents: z
+    .number()
+    .int("Amount must be a whole number of cents")
+    .positive("Enter an amount greater than zero"),
+  method: z.enum(["BANK_TRANSFER", "CRYPTO", "WALLET", "OTHER"]),
+  destination: z
+    .string()
+    .trim()
+    .min(3, "Tell us where the funds should go — at least 3 characters")
+    .max(300, "Destination is too long"),
+  details: z
+    .string()
+    .trim()
+    .max(2000, "Details are too long")
+    .or(z.literal(""))
+    .optional(),
+});
+
+export type RequestPayoutInput = z.infer<typeof requestPayoutSchema>;
+
+/**
+ * Admin action on one payout. The transition rules live in
+ * `lib/payouts/state.ts` — this schema only admits the action names.
+ */
+export const payoutActionSchema = z.object({
+  action: z.enum(["APPROVE", "REJECT", "MARK_PAID"]),
+});
+
+export type PayoutActionInput = z.infer<typeof payoutActionSchema>;
+
 /* ------------------------------------------------------------ community ----- */
 
 export const createPostSchema = z.object({

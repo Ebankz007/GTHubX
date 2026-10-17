@@ -24,6 +24,11 @@ export const navItems: NavItem[] = [
     description: "Your ledger history",
   },
   {
+    href: "/dashboard/payouts",
+    label: "Payouts",
+    description: "Request and track withdrawals",
+  },
+  {
     href: "/dashboard/community",
     label: "Community",
     description: "Member discussions",

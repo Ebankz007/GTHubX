@@ -12,7 +12,7 @@
 | **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ✅ 2026-10-14 |
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
 | **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings/community moderation/reports landed; KYC (needs Henry), content, finance pending |
-| **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | 🟡 2026-10-17 — **6a** money-write spine + **6b** rank milestones live (PAID/FLAGGED/SKU all smoke-proven); payouts + flagged-award admin flow pending |
+| **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | 🟡 2026-10-17 — **6a** money-write spine + **6b** rank milestones + **6c** payouts all live (PAID/FLAGGED/SKU, hold/refund/mark-paid all smoke-proven); flagged-award admin flow is the last Phase 6 item, Phase 7 blocked on Henry |
 | **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | ⬜ |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
 
@@ -635,13 +635,78 @@ gen, gen — flagged pays nothing), ledger `balanceAfter` 1600, pool `2200|1400`
 (flagged promotes), no duplicate awards, double-confirm → 409 with the award count
 unchanged.
 
+## Phase 6c — payouts: hold, review, refund (2026-10-17)
+
+**The money model — an inferred decision, stated openly.** 6a ended with the open
+question *does approving a payout debit the wallet, and when?* Henry's standing
+instruction was "proceed", so rather than re-ask, the semantics were chosen on first
+principles and can still be changed cheaply:
+
+- **REQUEST debits immediately (a hold).** Ledger `DEBIT/WITHDRAWAL`, key
+  `payout:{id}:hold`, written in the same transaction as the `Payout` row — via a
+  *conditional* `updateMany` (`balanceCents >= amount` in the WHERE), so racing requests
+  cannot drive a balance negative; the loser rolls back, Payout row included.
+- **REJECT refunds the hold.** Ledger `CREDIT/REFUND`, key `payout:{id}:refund`.
+- **APPROVE moves no money** — human review only.
+- **PAID moves no money and is terminal** — it records that the operator delivered funds
+  externally. Review cannot be skipped: `MARK_PAID` from `REQUESTED` is a 409.
+
+Consequence: `Wallet.balanceCents` always means **free** cash and over-commit is
+structurally impossible — the funds leave the balance at request time, long before any
+human sees it. Rejecting an *approved* payout is legal (change of mind before delivery);
+rejecting a *paid* one is not (the money already left externally).
+
+**Structure.** `lib/payouts/state.ts` is the pure transition matrix (+ `PayoutError`
+with its HTTP status map) — the whole lifecycle in one table, unit-tested as the full
+status × action matrix (19 tests). `lib/payouts/request.ts` and `lib/payouts/admin.ts`
+are the two writers; each admin transition is **claimed** with a conditional
+`updateMany` matching the expected status, so two admins racing on one payout can never
+both win — the loser gets 409, never a second refund. Surfaces: member
+`POST /api/account/payouts` (rate-limited 10/hour, zod `requestPayoutSchema`), admin
+`PATCH /api/admin/payouts/[id]` (`withdrawals` permission, audit row written *inside*
+the transaction for every action), `/dashboard/payouts` (request form + history, balance
+card links to it), `/admin/payouts` (status-filtered queue), nav entries on both sides,
+`payoutRequest` rate-limit bucket. The member request is recorded by the **ledger**
+(append-only, attributable); audit rows cover the admin decisions.
+
+**Fixture:** `pnpm db:seed:payout-fixture` — one verified member with a seeded 2000c
+wallet under its own `@payout-fixture.test` universe (wipes only itself; the rank
+fixture is untouched and neither smoke depends on the other). It logs in through the
+**real** login route, so the smoke exercises the actual session path — zero register
+calls.
+
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test` | ✅ **178/178 green** (24 files, +19 payout-transition matrix) |
+| Live smoke Phase 6c (cold start, clean shutdown) | ✅ **46/46** |
+| Live smoke Phase 6b / 6a (previous slices) | ✅ 30/30 · 32/32 |
+
+Smoke proves, end to end: 2000→1000 on request with ledger
+`DEBIT|WITHDRAWAL|1000|1000|{id}`; a 5000c over-balance request → 400
+`insufficient_balance` with balance **and row count** unchanged (transaction rollback);
+validation/401 gates; `MARK_PAID`-before-approve → 409; approve records
+approver+timestamp; **PAID leaves the balance at 1000** (no money moved), terminal
+409s after, exactly 2 audit rows; reject refunds `200 → 1000` with ledger
+`CREDIT|REFUND|800|1000`; double-reject → 409 with balance untouched (no double
+refund); approve-then-reject legal and refunded; final set exactly `PAID|1 +
+REJECTED|2`; holds 2200 = refunds 1200 + the 1000 actually delivered; member
+transactions page shows both row types; both nav links live.
+
+**Harness, not app:** 4 of the first run's 7 failures were a *new* PowerShell trap —
+inside a double-quoted string `"$p1:hold"` parses as the **scoped variable**
+`$p1:hold` (scope `p1`, name `hold`) and silently expands to **empty**, so the SQL
+searched for the literal `payout:`. Fix is `${p1}` braces. The other three: booleans
+concatenate in Postgres as `true`, not `t`, and `C-Status`'s 4th parameter was never
+wired to curl's output path (every HTML read hit an empty file). Every *money*
+assertion passed on the first run.
+
 ## Next
-1. **Payouts / withdrawals** — request → review → ledger debit; needs Phase 7 payment
-   adapters before money can leave, and needs Henry's call on whether approving a payout
-   debits the wallet and *when*.
+1. **Flagged-award admin flow** — the last Phase 6 slice, now unblocked: payout
+   semantics exist, so a FLAGGED `RankAward` can get approve/mark-paid and reject
+   actions. Funding rule stays the one the automatic path already uses: money only from
+   the RANK pool when it covers the award — no new money source is invented.
 2. **Phase 7: gateway, KYC adapters, SMTP** — blocked on Henry: gateway choice, KYC
    document requirements + PII posture, SMTP credentials.
 3. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) now land ~2.5×
    faster than planned against the $4.00 rank pool.
-4. **Flagged-award admin flow** (approve/fund/mark-paid) has no UI yet — deliberately
-   deferred until payout semantics exist.
