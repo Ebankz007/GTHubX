@@ -15,6 +15,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:seed": "prisma db seed",
     "db:seed:admin": "tsx prisma/seed-admin.ts",
+    "db:seed:rank-fixture": "tsx scripts/rank-fixture.ts",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate"
   },

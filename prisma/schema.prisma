@@ -766,6 +766,10 @@ model RankAward {
   user       User   @relation(fields: [userId], references: [id], onDelete: Cascade)
   approvedBy Admin? @relation("RankAwardApprover", fields: [approvedById], references: [id], onDelete: SetNull)
 
+  // One award per member per rank, enforced by the database. Settlement runs
+  // on every registration confirm, so the writer's check-then-insert must have
+  // an independent backstop: a double-pay would be unrecoverable.
+  @@unique([userId, kind, rankId])
   @@index([userId])
   @@index([status])
 }

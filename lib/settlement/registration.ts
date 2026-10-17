@@ -16,16 +16,19 @@
  * money out of a fee nobody paid.
  */
 import { prisma } from "@/lib/prisma";
-import type { Prisma } from "@/lib/generated/prisma/client";
 import { PLATFORM_FEE_CENTS, buildNetworkIndex, type NetworkIndex } from "@/lib/engine";
 import { planRegistrationSettlement, type RegistrationPlan } from "./plan";
+import { settleRankAwards, type RankAwardsResult } from "./rank-awards";
+import { creditWallet, type SettleClient } from "./wallet";
 
 // The planner is pure and lives in ./plan.ts so it can be unit-tested without a
 // database client; re-exported here because callers settle through this module.
 export { planRegistrationSettlement, type RegistrationPlan };
 
-/** A transaction client, or the root client for non-transactional use. */
-export type SettleClient = Prisma.TransactionClient | typeof prisma;
+// Shared money primitives live in ./wallet.ts — the rank-award writer needs the
+// same credit path, and it is called by this module, so keeping them here would
+// have made settlement internally circular. Re-exported for existing callers.
+export { creditWallet, type SettleClient };
 
 export type RegistrationSettlementResult = {
   readonly paymentId: string;
@@ -39,6 +42,8 @@ export type RegistrationSettlementResult = {
   /** What was actually credited (less when the tree is shallower than gen 6). */
   readonly generationPaidCents: number;
   readonly platformFeeCents: number;
+  /** Rank milestones this settlement triggered for the upline chain. */
+  readonly rankAwards: RankAwardsResult;
 };
 
 /**
@@ -69,42 +74,6 @@ export async function buildIndexFromDb(client: SettleClient = prisma): Promise<N
       highestLeadershipRank: m.highestLeadershipRank,
     })),
   );
-}
-
-/** Credit a member's wallet and record it in the immutable ledger. */
-async function creditWallet(
-  client: SettleClient,
-  args: {
-    readonly userId: string;
-    readonly amountCents: number;
-    readonly sourceUserId: string;
-    readonly paymentId: string;
-    readonly idempotencyKey: string;
-    readonly description: string;
-  },
-): Promise<void> {
-  const { balanceCents } = await client.wallet.upsert({
-    where: { userId: args.userId },
-    create: { userId: args.userId, balanceCents: args.amountCents },
-    update: { balanceCents: { increment: args.amountCents } },
-    select: { balanceCents: true },
-  });
-
-  await client.ledgerEntry.create({
-    data: {
-      userId: args.userId,
-      direction: "CREDIT",
-      type: "COMMISSION",
-      amountCents: args.amountCents,
-      balanceAfterCents: balanceCents,
-      currency: "USD",
-      sourceUserId: args.sourceUserId,
-      refType: "PAYMENT",
-      refId: args.paymentId,
-      description: args.description,
-      idempotencyKey: args.idempotencyKey,
-    },
-  });
 }
 
 /** Accrue into a shared pool and record the movement on the pool ledger. */
@@ -238,7 +207,8 @@ export async function settleRegistrationPayment(args: {
       userId: plan.direct.recipientId,
       amountCents: plan.direct.amountCents,
       sourceUserId: newMemberId,
-      paymentId,
+      refType: "PAYMENT",
+      refId: paymentId,
       idempotencyKey: `reg:${paymentId}:direct`,
       description: `Direct referral bonus - registration ${paymentId}`,
     });
@@ -264,7 +234,8 @@ export async function settleRegistrationPayment(args: {
       userId: credit.recipientId,
       amountCents: credit.amountCents,
       sourceUserId: newMemberId,
-      paymentId,
+      refType: "PAYMENT",
+      refId: paymentId,
       idempotencyKey: key,
       description: `Generation ${credit.generation} bonus - registration ${paymentId}`,
     });
@@ -282,6 +253,17 @@ export async function settleRegistrationPayment(args: {
     paymentId,
   });
 
+  // Rank milestones last: evaluation walks the upline chain of the member who
+  // just joined, and the RANK pool this payment just funded must already be
+  // credited, because a milestone may draw on the very registration that
+  // triggered it.
+  const rankAwards = await settleRankAwards({
+    client,
+    index,
+    newMemberId,
+    paymentId,
+  });
+
   return {
     paymentId,
     newMemberId,
@@ -292,6 +274,7 @@ export async function settleRegistrationPayment(args: {
     generationAllocatedCents: plan.allocation.generationPoolCents,
     generationPaidCents,
     platformFeeCents: PLATFORM_FEE_CENTS,
+    rankAwards,
   };
 }
 

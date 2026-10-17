@@ -12,7 +12,7 @@
 | **3. Auth + RBAC** | Sessions · register/login/reset · RBAC matrix (6 roles) · rate limiting · MFA | ✅ 2026-10-14 |
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
 | **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings/community moderation/reports landed; KYC (needs Henry), content, finance pending |
-| **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | 🟡 2026-10-17 — money-write spine landed (register opens wallet + pending payment; admin confirm settles direct commission, ledger, pools); rank milestones + payouts pending |
+| **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | 🟡 2026-10-17 — **6a** money-write spine + **6b** rank milestones live (PAID/FLAGGED/SKU all smoke-proven); payouts + flagged-award admin flow pending |
 | **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | ⬜ |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
 
@@ -572,12 +572,76 @@ member → sponsorId recorded and **zero** commissions before confirm; SUPER_ADM
 `5000|1500|500|400|350`, platform fee SETTLED, pools ≥400/≥350; double confirm → 409;
 SUPPORT_ADMIN (no `deposits`) → 403 and the page 307s.
 
-## Next — Phase 6b
-1. **Rank milestone evaluation on settle** — `engine/ranks.ts` against
-   `highestAssociateRank` / `highestLeadershipRank`. Open for Henry: absolute rewards
-   ($14 → $20,000) now land ~2.5× faster than the original plan assumed, because the rank
-   pool moved from $1.60 to $4.00 per registration. Rescale is his call, not mine.
-2. **Payouts / withdrawals** — request → review → ledger row, which needs Phase 7's payment
-   adapters before money can actually leave.
-3. Still blocked on Henry: gateway choice, KYC document requirements + PII posture, SMTP
-   credentials, and the business content for the 14 published-and-waiting public pages.
+## Phase 6b — rank milestones on settlement (2026-10-17)
+
+Ranks are gated on **member count, not money** (`eligibleTeamVolume` counts downline
+members with a 40% leg cap; `countPersonalReferrals` counts direct referrals) — so every
+settled registration is a rank input and evaluating on confirm is exactly right.
+
+**Where it runs:** inside the same transaction as registration settlement, **after** the
+pool accruals, so a milestone can draw on the very registration that triggered it.
+Candidates are the **full upline chain** (member → sponsor → root): the 6-generation
+window routes *payouts*, while rank qualification is a fact about tree shape.
+
+**One settlement, three outcomes** (live-proven):
+
+| Member | Qualification | Pool can cover? | Result |
+|---|---|---|---|
+| A | Associate 1 ($14) | yes (2200c available) | **PAID** — wallet +1400, ledger `RANK_AWARD`, `Commission(RANK_MILESTONE, PAID, pool RANK)`, pool `paidCents` +1400 |
+| S1 | Leadership 1 (SMARTPHONE) | n/a — SKU, costs nothing | **PENDING** — recorded for fulfillment, no money, no pool |
+| S2 | Associate 1 ($14) | no — 800c left | **FLAGGED** — row exists, zero rows of money moved |
+
+**Policy encoded (engine contract, not invented locally):**
+- Only the **highest newly-qualified** rank is awarded; the engine does not back-pay
+  milestones skipped by a jump. *If Henry wants stepwise payout, that is a change to
+  `lib/engine/ranks.ts`.*
+- When the pool cannot cover everyone, awards are consumed **nearest-to-the-new-member
+  first** (chain order) — the most proximate qualifier is paid, the rest flagged.
+- **A FLAGGED award still promotes the member.** The qualification is a fact; payment is
+  a separate state. Re-evaluation cannot re-award it (DB-unique), so a flag must later be
+  cleared by an admin action — there is no payout UI yet (that is 6c/Phase 7).
+
+**Idempotency has two independent layers:** the writer skips awards that already exist,
+and `RankAward` gained `@@unique([userId, kind, rankId])` — migration
+`20261017185500_rank_award_unique` (written by hand: `prisma migrate dev` refuses to run
+non-interactively, so the SQL went to a file and `migrate deploy` applied it; RankAward
+was verified empty first). A double-paid milestone would be unrecoverable, so the
+database, not application logic, has the last word.
+
+**Structure:** `creditWallet` moved to `lib/settlement/wallet.ts` — the rank writer needs
+the same credit path but is called *by* registration settlement, so keeping it there would
+have been circular. `lib/settlement/rank-plan.ts` is pure (`planRankAwards` +
+`applyPoolBudget`, both unit-tested); `lib/settlement/rank-awards.ts` writes.
+
+**Fixture:** `pnpm db:seed:rank-fixture` builds a 32-member tree in which one settlement
+produces all three outcomes at once. Dev-only by construction: it wipes only its own
+emails (`@rank-fixture.test`) and **resets the RANK pool to a known baseline** — which is
+why it must never touch production, where pool ledgers are append-only. It creates the
+PENDING payment itself, so the smoke makes **zero register-API calls** and never fights
+the 5/hour/IP rate limit.
+
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` | ✅ clean |
+| `pnpm test` | ✅ **159/159 green** (20 files, +12 rank-plan) |
+| Migration `rank_award_unique` | ✅ applied (`migrate deploy`) |
+| Live smoke Phase 6b (cold start, clean shutdown) | ✅ **30/30** |
+| Live smoke Phase 6a (still green) | ✅ 32/32 |
+
+Smoke proves against the database: the three award states, exactly one `RANK_MILESTONE`
+commission (1400, PAID, pool RANK), wallets `1500 / 1600 / 100 / 75` (direct, gen+rank,
+gen, gen — flagged pays nothing), ledger `balanceAfter` 1600, pool `2200|1400` with
+`PAYOUT balanceAfter 800` and never negative, rank write-back `A=1, S2=1, S1=3/1`
+(flagged promotes), no duplicate awards, double-confirm → 409 with the award count
+unchanged.
+
+## Next
+1. **Payouts / withdrawals** — request → review → ledger debit; needs Phase 7 payment
+   adapters before money can leave, and needs Henry's call on whether approving a payout
+   debits the wallet and *when*.
+2. **Phase 7: gateway, KYC adapters, SMTP** — blocked on Henry: gateway choice, KYC
+   document requirements + PII posture, SMTP credentials.
+3. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) now land ~2.5×
+   faster than planned against the $4.00 rank pool.
+4. **Flagged-award admin flow** (approve/fund/mark-paid) has no UI yet — deliberately
+   deferred until payout semantics exist.
