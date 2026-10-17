@@ -139,6 +139,17 @@ export const payoutActionSchema = z.object({
 
 export type PayoutActionInput = z.infer<typeof payoutActionSchema>;
 
+/**
+ * Admin action on one FLAGGED rank award. `MARK_PAID` pays it from the RANK
+ * pool if the pool covers it (409 `pool_short` otherwise); `REJECT` closes it
+ * without payment. Leadership SKUs are refused by the transition matrix.
+ */
+export const rankAwardActionSchema = z.object({
+  action: z.enum(["MARK_PAID", "REJECT"]),
+});
+
+export type RankAwardActionInput = z.infer<typeof rankAwardActionSchema>;
+
 /* ------------------------------------------------------------ community ----- */
 
 export const createPostSchema = z.object({

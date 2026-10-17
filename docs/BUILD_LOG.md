@@ -701,12 +701,85 @@ concatenate in Postgres as `true`, not `t`, and `C-Status`'s 4th parameter was n
 wired to curl's output path (every HTML read hit an empty file). Every *money*
 assertion passed on the first run.
 
+## Phase 6d — flagged rank-award admin flow (2026-10-18)
+
+**The last Phase 6 slice.** A `RankAward` set to FLAGGED at settlement time is a
+milestone the RANK pool could not fund *then*; registrations keep re-accruing the
+pool, so this slice gives an admin the two honest ways to close the gap:
+
+- **Mark paid** — pay it from the pool's available balance, but only if the pool
+  covers it *now*. Short pool ⇒ 409 `pool_short`, nothing written, "come back later".
+  When it pays, the money shape is **identical to the automatic path**: same
+  `Commission` (`RANK_MILESTONE`, key `rank:{userId}:associate:{rankId}`), same
+  wallet credit, same pool debit, same `PoolLedgerEntry PAYOUT`.
+- **Reject** — close it without payment. No money ever moved (nothing was held), so
+  there is **nothing to refund**; the member keeps the rank — qualification is a
+  fact, only the payout promise ends.
+
+**The funding rule, stated once:** money comes ONLY from the RANK pool when it
+covers the award. No new money source is invented — the shortfall flag exists
+precisely so the system never pays what it does not have. Leadership (SKU) awards
+are refused outright: fulfilling a physical SKU is delivery policy, not a pool
+decision.
+
+**Race discipline** (same as the payout writer): the transition is **claimed** with
+a conditional `updateMany` matching FLAGGED, so two admins racing on one award
+cannot both pay it. The pool increment runs *first* (locking the pool row) and the
+invariant `paid ≤ accrued` is verified *after* — a concurrent automatic settlement
+that exhausts the pool between our check and our write triggers `pool_short` and
+the whole transaction (claim included) rolls back. The pool structurally cannot go
+negative.
+
+**Structure.** `lib/settlement/rank-admin.ts` — the pure matrix
+(`rankAwardTransition`, full status × kind × action unit-tested) plus the one
+writer `actOnRankAward`. Surfaces: `PATCH /api/admin/rank-awards/[id]`
+(`withdrawals` permission, rate-limited, zod `rankAwardActionSchema`, audit row
+written *inside* the transaction), `/admin/rank-awards` page (RANK pool card with
+available balance, status-filtered queue, actions only on FLAGGED Associate rows),
+admin nav entry. `RankAward` has no admin column — attribution is the audit row,
+nothing else.
+
+**Harness, hoisted.** The Phase 5/6/6b smoke scripts kept vanishing from the shared
+temp dir mid-work; the fix is policy, not luck — **smoke harnesses are project
+artifacts and live in-repo** under `tools/smoke/`, deriving `$root` from
+`$PSScriptRoot`. All three smokes now ship with the repo.
+
+**Fixture** (`scripts/rank-fixture.ts`, evolved in 6c-closeout): two flaggers —
+`newcomer → a1 → A → S1 → S2 → M3` where M3 is a second root (S2 + P/Q legs ×4) —
+plus **three** PENDING newcomer payments, so the pool top-up path (3 confirms ⇒
+accrued 3000) is reproducible in one run.
+
+| Gate | Result |
+|---|---|
+| `pnpm exec tsc --noEmit` | ✓ clean |
+| `pnpm exec vitest run` | ✓ **197/197 green** (22 files, +19 rank-award matrix) |
+| Live smoke Phase 6d (cold start, clean shutdown) | ✓ **38/38** |
+| Live smoke Phase 6b / 6c (regression) | ✓ 32/32 · 46/46 |
+
+Smoke proves, end to end: confirm #1 splits the three outcomes (A PAID / S2+M3
+FLAGGED / S1 SKU) with pool 2200|1400 (avail 800); **MARK_PAID while short → 409
+pool_short twice** (after confirms #1 and #2) with zero writes — no commission, no
+ledger, no pool entry, award still FLAGGED; after confirm #3 (avail 1600) MARK_PAID
+→ 200 with body `PAID|1400|200`, award row `PAID|paidAt`, S2 wallet 1625
+(3×75 gen + 1400), ledger `1400|1625|RANK_AWARD`, pool `3000|2800` with PAYOUT
+`balanceAfter 200`, pool never negative; double-pay → 409, REJECT-on-PAID → 409;
+**REJECT M3 → 200 with NO money moved** (wallet untouched at 225, no ledger /
+commission / pool entry), rank stays 1 — no demotion; re-reject → 409; exactly 4
+award rows across 3 settles (no re-awards); final split `PENDING|1 + PAID|2 +
+REJECTED|1`; both audit rows (`rank-award.mark-paid`, `rank-award.reject`);
+`/admin/rank-awards` + `?status=FLAGGED` render; nav link live.
+
+**First-run friction, harness-only again:** the initial `tsc` refused `rewardCents`
+(null in the schema for SKU rows) in the pool-pay branch — fixed with an explicit
+guard that refuses to pay a cash award with no recorded amount (corruption, loudly
+refused) rather than a silent `?? 0`. Every money assertion passed first run.
+
 ## Next
-1. **Flagged-award admin flow** — the last Phase 6 slice, now unblocked: payout
-   semantics exist, so a FLAGGED `RankAward` can get approve/mark-paid and reject
-   actions. Funding rule stays the one the automatic path already uses: money only from
-   the RANK pool when it covers the award — no new money source is invented.
-2. **Phase 7: gateway, KYC adapters, SMTP** — blocked on Henry: gateway choice, KYC
+1. **Phase 7: gateway, KYC adapters, SMTP** — blocked on Henry: gateway choice, KYC
    document requirements + PII posture, SMTP credentials.
-3. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) now land ~2.5×
-   faster than planned against the $4.00 rank pool.
+2. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) now land ~2.5×
+   faster than planned against the $4.00 rank pool. Phase 6d makes the consequence
+   *visible*: every clear is a pool-refusal the admin must chase — a rescale or a
+   rank-pool carve increase is the durable fix.
+3. **Phase 6 is now closed**: 6a settlement · 6b ranks · 6c payouts · 6d flagged
+   awards. No open slices.

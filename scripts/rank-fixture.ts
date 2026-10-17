@@ -1,5 +1,5 @@
 /**
- * GTHubX — rank-milestone FIXTURE (Phase 6b).
+ * GTHubX — rank-milestone FIXTURE (Phase 6b, extended for 6d).
  *
  *   pnpm db:seed:rank-fixture
  *
@@ -7,18 +7,30 @@
  * settlement produces every rank outcome at once, so the live smoke can
  * assert all of them deterministically:
  *
- *   A   qualifies Associate rank 1  -> pool covers it  -> PAID  ($14)
+ *   A   qualifies Associate rank 1  -> pool covers it  -> PAID   ($14)
  *   S1  qualifies Leadership rank 1 -> SKU             -> PENDING (SMARTPHONE)
  *   S2  qualifies Associate rank 1  -> pool exhausted  -> FLAGGED ($14)
+ *   M3  qualifies Associate rank 1  -> pool exhausted  -> FLAGGED ($14)
  *
- *   tree:  newcomer -> a1 -> A -> S1 -> S2
+ *   tree:  newcomer -> a1 -> A -> S1 -> S2 -> M3
  *          A has 3 legs x 4 members            (3 refs, 15 team >= 12)
  *          S1 is seeded at Associate rank 3 with B/C/b1 also at rank 3
  *             across 2 legs                     (leadership gate)
- *          S2 has 5 legs, one dominant, capped   (eligible 16 >= 12)
+ *          S2 has 5 legs, one dominant, capped   (eligible >= 12)
+ *          M3 (root) has S2 + P + Q              (3 refs, big team)
+ *             -> TWO flaggers, because Phase 6d's admin flow needs one
+ *                award it can PAY from a later-recovered pool (S2) and one
+ *                it can REJECT (M3) — both states live-proven per run.
  *          RANK pool seeded at 1800c; the settle
  *             accrues +400c = 2200c available,
- *             A takes 1400, 800 remains -> S2 short
+ *             A takes 1400, 800 remains -> S2/M3 short.
+ *
+ *   THREE newcomer payments are created (newcomer, newcomer2, newcomer3,
+ *   all under a1). Confirming all three accrues 1800 + 1200 = 3000c, which
+ *   is what later lets an admin clear S2's flagged award from the pool
+ *   (1600 available >= 1400 after two confirms; M3 stays short at 200).
+ *   Phase 6b's smoke confirms only the FIRST payment, so its pool math
+ *   (2200|1400) is untouched.
  *
  * Non-negotiable behaviors:
  *   - Idempotent: wipes its OWN universe first (emails under
@@ -27,8 +39,8 @@
  *   - Resets the RANK pool to a known baseline. That overwrites dev-DB pool
  *     history, which is why this may never run against anything but a dev
  *     database: production pool ledgers are append-only, always.
- *   - The newcomer is created with a PENDING registration payment, mirroring
- *     `app/api/auth/register` exactly — the smoke confirms it through the
+ *   - The newcomers are created with PENDING registration payments, mirroring
+ *     `app/api/auth/register` exactly — the smoke confirms them through the
  *     real admin endpoint, so NO register API call is made (that route is
  *     rate-limited to 5/hour/IP and this fixture must be re-runnable).
  *
@@ -97,9 +109,16 @@ async function main() {
     return user.id;
   };
 
-  await addUser("S2"); // root
+  // M3 is the root and the SECOND flagger: S2 + P + Q = 3 refs (>= 3, < 7,
+  // so rank 1 only) and a team comfortably past 12 under any leg cap reading.
+  await addUser("M3"); // root
+  await addUser("S2", { sponsor: "M3" });
   await addUser("S1", { sponsor: "S2", assocRank: 3 }); // seeded Associate 3
   for (const name of ["X", "Y", "Z", "W"]) await addUser(name, { sponsor: "S2" });
+  for (const leg of ["P", "Q"]) {
+    await addUser(leg, { sponsor: "M3" });
+    for (let i = 1; i <= 4; i += 1) await addUser(`${leg}${i}`, { sponsor: leg });
+  }
 
   await addUser("A", { sponsor: "S1" });
   await addUser("B", { sponsor: "S1", assocRank: 3 });
@@ -114,23 +133,36 @@ async function main() {
     await addUser(`c${i}`, { sponsor: "C" });
   }
 
-  // The member whose settlement triggers evaluation of the whole chain above.
+  // The members whose settlement triggers evaluation of the whole chain above.
+  // Three of them: confirm #1 proves the three-outcome split (6b), confirms
+  // #2 and #3 only top the RANK pool up so 6d can clear a flagged award.
   const newcomerId = await addUser("newcomer", { sponsor: "a1" });
-  const payment = await prisma.payment.create({
-    data: {
-      userId: newcomerId,
-      purpose: "REGISTRATION",
-      amountCents: REGISTRATION_GROSS_CENTS,
-      platformFeeCents: PLATFORM_FEE_CENTS,
-      currency: "USDT",
-      status: "PENDING",
-      paymentRef: `FIXTURE-${randomUUID().replace(/-/g, "").slice(0, 20).toUpperCase()}`,
-    },
-  });
+  const newcomer2Id = await addUser("newcomer2", { sponsor: "a1" });
+  const newcomer3Id = await addUser("newcomer3", { sponsor: "a1" });
+
+  const newPayment = async (userId: string) =>
+    prisma.payment.create({
+      data: {
+        userId,
+        purpose: "REGISTRATION",
+        amountCents: REGISTRATION_GROSS_CENTS,
+        platformFeeCents: PLATFORM_FEE_CENTS,
+        currency: "USDT",
+        status: "PENDING",
+        paymentRef: `FIXTURE-${randomUUID().replace(/-/g, "").slice(0, 20).toUpperCase()}`,
+      },
+    });
+
+  const payment = await newPayment(newcomerId);
+  const payment2 = await newPayment(newcomer2Id);
+  const payment3 = await newPayment(newcomer3Id);
 
   console.log(`FIXTURE_OK usersWiped=${wiped.count} pool=${pool.accruedCents}`);
   console.log(`NEWCOMER_PAYMENT=${payment.id}`);
   console.log(`NEWCOMER_USER=${newcomerId}`);
+  console.log(`NEWCOMER2_PAYMENT=${payment2.id}`);
+  console.log(`NEWCOMER3_PAYMENT=${payment3.id}`);
+  console.log(`M3_USER=${ids.get("M3")}`);
 }
 
 main()

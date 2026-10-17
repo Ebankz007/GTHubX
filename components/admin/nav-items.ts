@@ -42,6 +42,12 @@ export const adminNavItems: AdminNavItem[] = [
     permission: "withdrawals",
   },
   {
+    href: "/admin/rank-awards",
+    label: "Rank awards",
+    description: "Milestone rewards and flags",
+    permission: "withdrawals",
+  },
+  {
     href: "/admin/community",
     label: "Community",
     description: "Posts and comments",
