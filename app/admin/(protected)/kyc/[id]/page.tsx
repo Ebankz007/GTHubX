@@ -8,7 +8,7 @@ import { clientIpFromHeaders } from "@/lib/rate-limit";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { KycActions } from "@/components/admin/kyc-actions";
-import { ageInYears, documentPolicy, idTypeLabel, idNumberFormatOk } from "@/lib/kyc/policy";
+import { ageInYears, documentPolicy, idTypeLabel } from "@/lib/kyc/policy";
 import { idNumberReference } from "@/lib/kyc/identity";
 
 export const metadata = { title: "Verification submission" };

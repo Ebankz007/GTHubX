@@ -13,7 +13,7 @@
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
 | **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings/community moderation/reports landed; KYC (needs Henry), content, finance pending |
 | **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ✅ 2026-10-18 — **6a** money-write spine · **6b** rank milestones · **6c** payouts · **6d** flagged-award admin flow; closed, all four smoke-proven |
-| **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | 🟡 2026-10-18 — **7a** Pay2Crypto rail · **7b** Resend mail layer · **7c** KYC pipeline + the withdrawal gate it enforces. WhatsApp/Telegram **not started** |
+| **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | 🟡 2026-10-18 — **7a** Pay2Crypto rail · **7b** Resend mail layer · **7c** KYC pipeline + the withdrawal gate it enforces · **7d** identity minimisation + read-access audit + retention. WhatsApp/Telegram deferred pending the Notification writer. |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
 
 ## Phase 1 — done (2026-10-11)
@@ -1017,20 +1017,122 @@ that guard is the reason the number 38 appears in the harness at all.
 collected), and that a reviewer's decision is correct. The second one is a human
 process, and this phase gives it a queue and an audit trail, not a brain.
 
+## Phase 7d — the platform stops holding what it does not need (2026-10-18)
+
+Two recommendations sat on the table after 7c: what to do about the identity
+data, and whether to add WhatsApp/Telegram. The answer on both was "follow your
+recommendation", and this phase is the identity half. The product was storing a
+**plaintext document number** — a government-issued identifier, which the Data
+Privacy Act classifies as *sensitive personal information* (s.3(l)(3)), carrying
+higher penalties than ordinary personal information. Verification is a
+point-in-time act: the number is needed to *check* someone, not to *keep* them.
+
+So the `idNumber` column is gone. Two derived columns replace it:
+
+- **`idNumberHash`** — an HMAC-SHA256 keyed with `KYC_ID_PEPPER`, so the same
+  document used twice is still detectable, but the stored digest cannot be
+  reversed by enumerating the short, structured space of possible numbers.
+  A bare `sha256(idNumber)` would fail this: a 9-digit number is 10⁹ hashes,
+  seconds on a laptop. The digest must be **keyed** to be minimisation rather
+  than costume. When the pepper is absent, the function returns `null` rather
+  than falling back to an unkeyed digest — losing duplicate detection (a
+  feature) is the acceptable direction to fail; writing a weak digest of
+  sensitive personal information is not.
+- **`idNumberLast4`** — the four characters a reviewer can match against, and
+  the only part a support agent should ever quote. The member page now says
+  out loud what the platform does: *"We keep only the last four characters of
+  the document number you gave us (ends 1234), not the whole number."*
+
+Normalisation is a single function (`normalizeIdNumber`) imported by both the
+hash and the last-four derivation, so `a0 1234567` and `A01234567` cannot be
+stored differently. It lives in `policy.ts` (client-safe) and is imported by
+`identity.ts` (which touches `node:crypto`) — not the other way round.
+
+**The queue got thinner so the trail could get real.** 7c rendered every
+member's legal name, date of birth, address and document number into the
+`/admin/kyc` list — access to sensitive personal information as a side effect
+of *looking at a list*, unrecorded and unanswerable afterwards. The list now
+shows only triage (name, status, submitted, prior reason). The full details
+live at `/admin/kyc/[id]`, which **writes a `kyc.view` audit row on open**:
+admin, submission, address. That is the question the accountability principle
+actually asks — who looked at whose identity data, and when. Two deliberate
+details: the list links are plain `<a>` elements, not `next/link`, because the
+App Router prefetches `Link` targets on hover and a prefetch would write access
+records for pages nobody opened (an audit trail of imagined views is worse than
+none); and the audit write is **not** try/caught — if the trail cannot be
+written, the page must not render. `clientIp` was split into
+`clientIpFromHeaders` so a server component and a route handler derive the
+address the same way; two implementations would drift, and an audit row with a
+differently-derived IP is not comparable with the rest of the trail.
+
+**Retention.** "This member was verified on 4 May 2026 by reviewer X" is a fact
+the platform may need for years. The name, birth date, address and document
+reference that supported it are not. `IDENTITY_RETENTION_DAYS = 365` (a
+starting point, not a compliance opinion — the number that should come from
+counsel), and `pnpm db:purge:identity [--dry-run]` clears the identity columns
+from rows past the window while leaving `status`, both dates, `reviewedById`
+and `rejectionReason` intact. The script never logs the values it removes: a
+retention job that prints the data it deleted has *moved* it, not deleted it,
+and a cron transcript is less protected than the database. `IDENTITY_FIELDS`
+is exported from `policy.ts` so a new identity column cannot be added without
+appearing in the purge list.
+
+The migration backfills `idNumberLast4` from the value being removed and then
+drops `idNumber`. `idNumberHash` is deliberately **left null** for the three
+rows that predate the pepper: the key is not in the database, and an unkeyed
+digest would be worse than nothing. The payout fixture now derives both fields
+the same way a real submission does — otherwise it would be the only row in
+the database still holding a raw number.
+
+### Verification
+
+| Gate | Result |
+|---|---|
+| `pnpm exec tsc --noEmit` | ✓ clean |
+| `pnpm exec vitest run` | ✓ **361/361 green** (30 files, +20) |
+| Live smoke Phase 7d (cold start, clean shutdown) | ✓ **35/35** |
+| Live smoke Phase 7c (regression, post-minimisation) | ✓ **39/39** |
+| Migration `20261018061624_kyc_identity_minimisation` applied | ✓ |
+| `pnpm db:purge:identity --dry-run` / real run | ✓ both exit 0, no values printed |
+
+**The 7d smoke proves the negative, not the positive.** A migration that ran
+and left a copy behind is exactly the failure this phase exists to prevent, so
+the harness submits a unique document number and then hunts for it: in every
+column of every `KycProfile` row (via `row_to_json`), in every audit row, and
+in every dev log line. It also recomputes bare `sha256(value)` and asserts the
+stored digest **differs** — if the platform ever stored an unkeyed digest, this
+check is what catches it. Then it proves the access record by counting
+`kyc.view` rows before and after opening a submission (exactly one, naming the
+admin, with an IP), that opening the *queue* writes none (plain anchors, no
+prefetch trail), and that the retention job runs quietly without values in its
+output. First run: 33/34 — the member-facing notice assertion failed, and it
+was right to: the notice lives with the resubmission form, so a PENDING member
+cannot see it. The harness now rejects the submission before reading the member
+page, which also proved the reject→resubmit path still works under 7d.
+
+**What this does not prove:** that the pepper is backed up (lose it and the
+duplicate-check column becomes null — duplicates stop being detectable for new
+submissions), and that 365 days is the legally correct retention window. Both
+are operational and legal calls, not code.
+
 ## Next
-1. **Phase 7 is not finished.** WhatsApp/Telegram notifications are still in the
-   phase's scope and unbuilt. **Henry's call:** whether the platform needs those
-   channels at all, or whether email plus the in-app feed is the product. Nothing
-   writes `Notification` rows yet either — the feed exists and is empty.
-2. **The PII decision** — where identity document *files* live (object storage
+1. **Phase 7e — the Notification writer.** Nothing writes `Notification` rows;
+   the in-app feed exists and is empty. Wire a writer into every email site
+   (activation, verification decided, password reset, payment confirmed), then
+   measure whether the feed earns its place before deciding on WhatsApp/Telegram.
+2. **Email deliverability DNS checklist for Resend** — SPF, DKIM, DMARC, custom
+   return-path. Until these land, real sends will land in spam or bounce, and
+   the dev-log path is the only honest one we have.
+3. **The PII decision** — where identity document *files* live (object storage
    with encryption at rest, a third-party KYC provider, or manual collection).
-   Until it is made, reviewers decide on the member's typed details alone.
-3. **Live credentials** — a Pay2Crypto token and a Resend API key, for the first
+   What the platform *stores* is now minimised; what it might one day *receive*
+   is still open.
+4. **Live credentials** — a Pay2Crypto token and a Resend API key, for the first
    real (non-mock) payment and the first real email.
-4. **Policy not yet decided:** what an overpaid member is told. Their second
+5. **Policy not yet decided:** what an overpaid member is told. Their second
    invoice is recorded PAID and not settled; today they get no email at all.
-5. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) land ~2.5×
+6. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) land ~2.5×
    faster than planned against the $4.00 rank pool, so clears become pool-refusals
    an admin must chase. A rescale or a rank-pool carve increase is the durable fix.
-6. **Open elsewhere:** aaPanel deploy (server/domain/scope), AmplifiedTraders remote
+7. **Open elsewhere:** aaPanel deploy (server/domain/scope), AmplifiedTraders remote
    (public or private), and revoking the pasted PAT.
