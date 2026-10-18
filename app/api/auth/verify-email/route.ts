@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { hashToken } from "@/lib/tokens";
 import { verifyEmailSchema, firstError } from "@/lib/validators";
 import { rateLimit, rateLimitKey, RATE_LIMITS } from "@/lib/rate-limit";
+import { writeInAppNotification } from "@/lib/notifications/in-app";
 
 export async function POST(request: Request) {
   const key = rateLimitKey(request, "verify-email");
@@ -59,6 +60,14 @@ export async function POST(request: Request) {
       data: { revokedAt: new Date() },
     }),
   ]);
+
+  await writeInAppNotification({
+    userId: session.userId,
+    type: "ACCOUNT",
+    title: "Email verified",
+    body: "Your email address has been verified.",
+    link: "/dashboard",
+  });
 
   return Response.json({
     ok: true,

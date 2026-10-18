@@ -15,6 +15,7 @@ import { formatCents } from "@/lib/money";
 import { siteName, siteOrigin } from "@/lib/site";
 import type { KycAction } from "@/lib/kyc/state";
 import { sendEmail } from "./email";
+import { writeInAppNotification } from "./in-app";
 import {
   kycRejectedTemplate,
   kycVerifiedTemplate,
@@ -35,7 +36,7 @@ export async function notifyRegistrationPaid(input: {
       select: {
         amountCents: true,
         currency: true,
-        user: { select: { email: true, fullName: true } },
+        user: { select: { id: true, email: true, fullName: true } },
       },
     });
     if (!payment) return;
@@ -48,6 +49,13 @@ export async function notifyRegistrationPaid(input: {
     });
 
     await sendEmail({ to: payment.user.email, ...template });
+    await writeInAppNotification({
+      userId: payment.user.id,
+      type: "PAYMENT",
+      title: "Registration confirmed",
+      body: `Your registration payment of ${formatCents(payment.amountCents, payment.currency)} was confirmed.`,
+      link: "/dashboard/registration",
+    });
   } catch (error) {
     console.warn(
       `[notify] registration-paid email failed for payment ${input.paymentId}`,
@@ -73,7 +81,7 @@ export async function notifyKycDecision(input: {
   try {
     const profile = await prisma.kycProfile.findUnique({
       where: { id: input.kycProfileId },
-      select: { user: { select: { email: true, fullName: true } } },
+      select: { user: { select: { id: true, email: true, fullName: true } } },
     });
     if (!profile) return;
 
@@ -89,6 +97,23 @@ export async function notifyKycDecision(input: {
         : kycRejectedTemplate({ ...common, reason: input.reason?.trim() || "Not specified" });
 
     await sendEmail({ to: profile.user.email, ...template });
+    if (input.action === "VERIFY") {
+      await writeInAppNotification({
+        userId: profile.user.id,
+        type: "ACCOUNT",
+        title: "Identity verified",
+        body: "Your identity was verified. Withdrawals are now enabled on your account.",
+        link: "/dashboard/verification",
+      });
+    } else {
+      await writeInAppNotification({
+        userId: profile.user.id,
+        type: "ACCOUNT",
+        title: "Verification needs attention",
+        body: "A reviewer left a reason — please correct and resubmit.",
+        link: "/dashboard/verification",
+      });
+    }
   } catch (error) {
     console.warn(
       `[notify] kyc ${input.action.toLowerCase()} email failed for profile ${input.kycProfileId}`,

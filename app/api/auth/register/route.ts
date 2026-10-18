@@ -5,6 +5,7 @@ import { generateToken, hashToken } from "@/lib/tokens";
 import { registerSchema, firstError } from "@/lib/validators";
 import { rateLimit, rateLimitKey, RATE_LIMITS } from "@/lib/rate-limit";
 import { sendEmail } from "@/lib/notifications/email";
+import { writeInAppNotification } from "@/lib/notifications/in-app";
 import { verifyEmailTemplate } from "@/lib/notifications/templates";
 import { siteName, siteOrigin } from "@/lib/site";
 import { attachCheckoutToPayment } from "@/lib/payments/checkout";
@@ -116,6 +117,13 @@ export async function POST(request: Request) {
       url: link,
       ttlHours: VERIFY_TTL_MS / 3_600_000,
     }),
+  });
+  await writeInAppNotification({
+    userId: registration.created.id,
+    type: "ACCOUNT",
+    title: "Verify your email",
+    body: "Please check your inbox to verify your email address.",
+    link: "/dashboard/verification",
   });
 
   // Open the payment checkout now, so the member's registration page has a

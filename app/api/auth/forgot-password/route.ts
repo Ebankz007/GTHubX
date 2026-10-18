@@ -3,6 +3,7 @@ import { generateToken, hashToken } from "@/lib/tokens";
 import { forgotPasswordSchema, firstError } from "@/lib/validators";
 import { rateLimit, rateLimitKey, RATE_LIMITS } from "@/lib/rate-limit";
 import { sendEmail } from "@/lib/notifications/email";
+import { writeInAppNotification } from "@/lib/notifications/in-app";
 import { passwordResetTemplate } from "@/lib/notifications/templates";
 import { siteName, siteOrigin } from "@/lib/site";
 
@@ -59,6 +60,13 @@ export async function POST(request: Request) {
         url: link,
         ttlMinutes: RESET_TTL_MS / 60_000,
       }),
+    });
+    await writeInAppNotification({
+      userId: user.id,
+      type: "SECURITY",
+      title: "Password reset requested",
+      body: "A password reset was requested for your account.",
+      link: "/reset-password?token=" + token,
     });
   }
 
