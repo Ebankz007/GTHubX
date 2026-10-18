@@ -13,7 +13,7 @@ export type AdminNavItem = {
  * with `requireAdminPermission`. The nav filter is a courtesy; the page guard
  * is the gate.
  *
- * Areas not yet built (kyc, packages, copy, network, content,
+ * Areas not yet built (packages, copy, network, content,
  * blog, faq, media, messages) are absent rather than listed with dead hrefs.
  */
 export const adminNavItems: AdminNavItem[] = [
@@ -28,6 +28,12 @@ export const adminNavItems: AdminNavItem[] = [
     label: "Users",
     description: "Member accounts and status",
     permission: "users",
+  },
+  {
+    href: "/admin/kyc",
+    label: "Verification",
+    description: "Identity submissions and decisions",
+    permission: "kyc",
   },
   {
     href: "/admin/payments",

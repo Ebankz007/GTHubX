@@ -13,7 +13,7 @@
 | **4. Client portal** | dashboard · copy · packages · network · wallet · community · KYC · support | 🟡 2026-10-14 — portal core landed; wallet/network/packages/copy gated |
 | **5. Admin + Superadmin** | ops admin + superadmin (roles · settings · integrations · audit · reports) | 🟡 2026-10-14 — auth, RBAC gate, dashboard/users/audit/team/role editor/site settings/community moderation/reports landed; KYC (needs Henry), content, finance pending |
 | **6. Engine integration** | referral tree · commissions · ranks · pools · payouts · immutable ledger | ✅ 2026-10-18 — **6a** money-write spine · **6b** rank milestones · **6c** payouts · **6d** flagged-award admin flow; closed, all four smoke-proven |
-| **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | 🟡 2026-10-18 — **7a** Pay2Crypto rail live · **7b** Resend mail layer live (verify, reset, payment-confirmed); **7c** KYC next |
+| **7. Integrations** | payments · email · WhatsApp/Telegram · KYC adapters + webhooks | 🟡 2026-10-18 — **7a** Pay2Crypto rail · **7b** Resend mail layer · **7c** KYC pipeline + the withdrawal gate it enforces. WhatsApp/Telegram **not started** |
 | **8. Hardening + deploy** | OWASP · a11y (WCAG 2.2 AA) · responsive · SEO · perf · aaPanel · backups | ⬜ |
 
 ## Phase 1 — done (2026-10-11)
@@ -928,17 +928,109 @@ on the overpayment path (a member whose second invoice was recorded-but-not-sett
 gets no automated mail, because promising a refund is Henry's call), and no deposit
 email (nothing creates a deposit invoice yet). Both are recorded as open.
 
+## Phase 7c — identity verification, and the promise it finally keeps (2026-10-18)
+
+The verification page has told members since Phase 4 that verification is
+"required before any withdrawal can be processed." **Nothing enforced it.** The
+claim was in the copy, the `kycStatus` column was in the schema, and between the
+two there was no code. This phase builds the pipeline and, more to the point,
+makes the sentence true.
+
+**The one decision deliberately not taken.** Where identity documents live is a
+PII posture with legal weight — encryption at rest, per-object access control, a
+retention and deletion schedule, a breach-exposure answer. That is Henry's call.
+So `DOCUMENTS_UPLOAD_ENABLED` is `false` and **no document bytes are collected**:
+the pipeline is complete without them, a reviewer decides on the facts, and the
+upload path slots in behind `documentPolicy()` when the decision lands. Building
+a `public/uploads/` folder for passport scans "temporarily" is how a temporary
+liability becomes a permanent one, and the smoke asserts that `documents` is
+still null rather than leaving it implicit.
+
+**Structure.** `lib/kyc/policy.ts` is the one editable home of the rules —
+document types, the documents a member is asked to have ready, the age floor,
+the field limits — plus `ageInYears`, counted in UTC so a birth date without a
+zone cannot produce an answer that depends on where the server sits.
+`lib/kyc/state.ts` is the transition matrix, shaped like `lib/payouts/state.ts`:
+`PENDING` → `VERIFIED | REJECTED`, `NOT_STARTED` refused, `VERIFIED` refused,
+and **`REJECTED` may resubmit**, because a rejection a member cannot answer turns
+a correctable document problem into a dead end. `lib/kyc/submit.ts` and
+`lib/kyc/review.ts` are the writers.
+
+**Every write is claimed, not assumed.** Both writers match on the expected
+current status in the `WHERE` of a conditional `updateMany`, so two reviewers
+deciding the same submission — the normal case, not an exotic one — leave the
+loser with a count of 0 and a 409 rather than an overwrite. The profile and the
+denormalised `User.kycStatus` move in one transaction: a profile saying PENDING
+next to a user saying NOT_STARTED is a member whose verification page contradicts
+their own withdrawal gate.
+
+**A rejection must carry a reason**, at least `KYC_LIMITS.reasonMin` characters,
+enforced in the route and again in the domain function — both reading the same
+constant, so they cannot drift. The reason is emailed through `renderLayout`,
+which escapes it: an admin's free text lands in a browser, so it is treated as
+input, not as copy.
+
+**The gate lives in the domain function, not the route.** `requestPayout` loads
+the member's `kycStatus` and refuses anything but `VERIFIED` with
+`PayoutError("kyc_required")` → 403, *before* the Payout row is created. Putting
+it there rather than in the HTTP handler means no future caller — a batch tool, a
+second route, an admin impersonation — can skip it. This is the same reason the
+balance guard is a `WHERE` clause instead of a read.
+
+**The audit row is written inside the decision's transaction**, so an approval
+cannot commit without its trail; the member's email is sent after the commit, so
+the decision is durable before anyone is told about it.
+
+| Gate | Result |
+|---|---|
+| `pnpm exec tsc --noEmit` | ✓ clean |
+| `pnpm exec vitest run` | ✓ **334/334 green** (29 files, +68) |
+| Live smoke Phase 7c (cold start, clean shutdown) | ✓ **39/39** |
+| Live smoke 6b / 6c / 6d / 7a / 7b (regression) | ✓ 32 · 46 · 38 · 33 · 22 |
+
+**The smoke proves the gate by sending the same request twice.** One payout
+request, an empty wallet both times: before verification it must answer 403
+`kyc_required`, after it must answer 400 `insufficient_balance`. That pairing is
+the proof that identity is what changed and that the gate is the only thing in
+the way. Around it, the harness lives the whole loop in the member's order —
+register, activate, submit, be refused, be rejected with a reason, resubmit,
+be verified, be let through — and checks the audit trail, the two emails, and
+that a verified member cannot re-enter the queue.
+
+**This phase broke an older smoke, and that was the point.** `phase6c` went from
+46/46 to 13/46 the moment the gate landed: its fixture member had a wallet but
+had never been verified, so every payout request 403'd. The honest fix was to
+seed the fixture as identity-verified in `scripts/payout-fixture.ts` — the
+fixture exists to exercise the payout rail, so it has to satisfy the platform's
+own precondition. Reaching around the gate with SQL in the harness would have
+left the suite green while testing a bypass of the thing under test.
+
+**Two harness faults, both found the hard way.** PowerShell 5.1's `+` refuses to
+merge hashtables with duplicate keys, so the variant fixtures are clones with one
+field overwritten. And the first version of the harness **exited 0 after aborting
+mid-run** — 11 checks executed, the summary printed "0 failed", exit code 0. A
+green run over a third of a suite is worse than a red one, so the script now
+carries an expected check count and fails loudly when the run comes up short;
+that guard is the reason the number 38 appears in the harness at all.
+
+**What this does not prove:** that uploaded documents are reviewed (none are
+collected), and that a reviewer's decision is correct. The second one is a human
+process, and this phase gives it a queue and an audit trail, not a brain.
+
 ## Next
-1. **Phase 7c — KYC pipeline.** Requirement constant, submission route + form,
-   admin review queue, decision route. **Henry's call, still open:** which document
-   types are required and where PII lives (document *files* are the sensitive part;
-   the machine is built with the policy in one editable module).
-2. **Live credentials** — a Pay2Crypto token and a Resend API key, for the first
+1. **Phase 7 is not finished.** WhatsApp/Telegram notifications are still in the
+   phase's scope and unbuilt. **Henry's call:** whether the platform needs those
+   channels at all, or whether email plus the in-app feed is the product. Nothing
+   writes `Notification` rows yet either — the feed exists and is empty.
+2. **The PII decision** — where identity document *files* live (object storage
+   with encryption at rest, a third-party KYC provider, or manual collection).
+   Until it is made, reviewers decide on the member's typed details alone.
+3. **Live credentials** — a Pay2Crypto token and a Resend API key, for the first
    real (non-mock) payment and the first real email.
-3. **Policy not yet decided:** what an overpaid member is told. Their second
+4. **Policy not yet decided:** what an overpaid member is told. Their second
    invoice is recorded PAID and not settled; today they get no email at all.
-4. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) land ~2.5×
+5. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) land ~2.5×
    faster than planned against the $4.00 rank pool, so clears become pool-refusals
    an admin must chase. A rescale or a rank-pool carve increase is the durable fix.
-5. **Open elsewhere:** aaPanel deploy (server/domain/scope), AmplifiedTraders remote
+6. **Open elsewhere:** aaPanel deploy (server/domain/scope), AmplifiedTraders remote
    (public or private), and revoking the pasted PAT.

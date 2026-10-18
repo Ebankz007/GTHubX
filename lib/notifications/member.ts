@@ -13,8 +13,13 @@
 import { prisma } from "@/lib/prisma";
 import { formatCents } from "@/lib/money";
 import { siteName, siteOrigin } from "@/lib/site";
+import type { KycAction } from "@/lib/kyc/state";
 import { sendEmail } from "./email";
-import { registrationPaidTemplate } from "./templates";
+import {
+  kycRejectedTemplate,
+  kycVerifiedTemplate,
+  registrationPaidTemplate,
+} from "./templates";
 
 /**
  * "Your registration is confirmed." Called once, after the settlement
@@ -46,6 +51,47 @@ export async function notifyRegistrationPaid(input: {
   } catch (error) {
     console.warn(
       `[notify] registration-paid email failed for payment ${input.paymentId}`,
+      error,
+    );
+  }
+}
+
+/**
+ * "Your identity is verified" / "verification needs attention."
+ *
+ * Called once, after the reviewer's decision has committed — so a member is
+ * never told their identity passed on a transaction that later rolled back. A
+ * rejection carries the reviewer's own words; the reason is passed through
+ * unedited and escaped at render time, because an admin's free text is input,
+ * not copy.
+ */
+export async function notifyKycDecision(input: {
+  readonly kycProfileId: string;
+  readonly action: KycAction;
+  readonly reason?: string | null;
+}): Promise<void> {
+  try {
+    const profile = await prisma.kycProfile.findUnique({
+      where: { id: input.kycProfileId },
+      select: { user: { select: { email: true, fullName: true } } },
+    });
+    if (!profile) return;
+
+    const common = {
+      siteName: siteName(),
+      name: profile.user.fullName,
+      url: `${siteOrigin()}/dashboard/verification`,
+    };
+
+    const template =
+      input.action === "VERIFY"
+        ? kycVerifiedTemplate(common)
+        : kycRejectedTemplate({ ...common, reason: input.reason?.trim() || "Not specified" });
+
+    await sendEmail({ to: profile.user.email, ...template });
+  } catch (error) {
+    console.warn(
+      `[notify] kyc ${input.action.toLowerCase()} email failed for profile ${input.kycProfileId}`,
       error,
     );
   }

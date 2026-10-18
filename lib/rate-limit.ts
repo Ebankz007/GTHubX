@@ -91,4 +91,10 @@ export const RATE_LIMITS = {
   checkoutRequest: { limit: 20, windowMs: 60 * 60 * 1000 },
   /** The gateway legitimately retries; this only blunts brute force on the secret. */
   gatewayWebhook: { limit: 300, windowMs: 15 * 60 * 1000 },
+  /** A member submits once; resubmissions after a rejection are rare and
+   *  deliberate. 10/hour is far above any honest cadence. */
+  kycSubmission: { limit: 10, windowMs: 60 * 60 * 1000 },
+  /** A reviewer works a queue, so this is a ceiling on a burst, not a budget:
+   *  60 decisions per quarter-hour. */
+  kycDecision: { limit: 60, windowMs: 15 * 60 * 1000 },
 } as const;

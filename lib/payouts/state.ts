@@ -98,12 +98,16 @@ export function payoutTransition(
 export type PayoutErrorCode =
   | "not_found"
   | "invalid_transition"
-  | "insufficient_balance";
+  | "insufficient_balance"
+  | "kyc_required";
 
 const PAYOUT_ERROR_STATUS: Record<PayoutErrorCode, number> = {
   not_found: 404,
   invalid_transition: 409,
   insufficient_balance: 400,
+  /** 403: the request is understood and the balance may be fine — the member
+   *  simply is not yet allowed to withdraw. */
+  kyc_required: 403,
 };
 
 /** Thrown by the payout writers; the routes map the code to an HTTP status. */

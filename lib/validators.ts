@@ -1,6 +1,15 @@
 import { z } from "zod";
 import { MAX_PASSWORD_BYTES } from "@/lib/password";
 import { PostStatus } from "@/lib/generated/prisma/enums";
+import {
+  ID_TYPE_IDS,
+  KYC_LIMITS,
+  MAX_AGE_YEARS,
+  MIN_AGE_YEARS,
+  ageInYears,
+  isAdult,
+} from "@/lib/kyc/policy";
+import { KYC_ACTIONS } from "@/lib/kyc/state";
 
 /** Normalise (trim + lowercase) then validate. Stored emails are always lowercase. */
 export const emailSchema = z
@@ -250,6 +259,93 @@ export type UpdateCommunityPostInput = z.infer<typeof updateCommunityPostSchema>
 export type UpdateCommunityCommentInput = z.infer<
   typeof updateCommunityCommentSchema
 >;
+
+/* ------------------------------------------------------------------- kyc -- */
+
+/**
+ * Date of birth arrives as `YYYY-MM-DD` from a date input.
+ *
+ * Parsed as UTC midnight and judged with `ageInYears`, so the answer does not
+ * depend on where the server sits. The round-trip check rejects `2024-02-31`,
+ * which `Date` would otherwise silently roll forward to 2 March.
+ */
+const dateOfBirthSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Enter your date of birth as YYYY-MM-DD")
+  .refine((value) => {
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return (
+      !Number.isNaN(parsed.getTime()) &&
+      parsed.toISOString().slice(0, 10) === value
+    );
+  }, "Enter a real calendar date")
+  .transform((value) => new Date(`${value}T00:00:00Z`))
+  .refine(
+    (dob) => dob.getTime() <= Date.now(),
+    "A date of birth cannot be in the future",
+  )
+  .refine(
+    (dob) => isAdult(dob, new Date()),
+    `You must be at least ${MIN_AGE_YEARS} years old to verify`,
+  )
+  .refine(
+    (dob) => ageInYears(dob, new Date()) <= MAX_AGE_YEARS,
+    "Enter a valid date of birth",
+  );
+
+/**
+ * The member's half of KYC. Limits come from `lib/kyc/policy.ts` so the form and
+ * the edge cannot disagree about how long a field may be.
+ *
+ * There is no `documents` field: nothing uploads files yet, and accepting one
+ * here would put a fake answer where the reviewer expects evidence.
+ */
+export const kycSubmissionSchema = z.object({
+  legalName: z
+    .string()
+    .trim()
+    .min(KYC_LIMITS.legalNameMin, "Enter your full legal name")
+    .max(KYC_LIMITS.legalNameMax),
+  dateOfBirth: dateOfBirthSchema,
+  country: z
+    .string()
+    .trim()
+    .min(KYC_LIMITS.countryMin, "Enter your country of residence")
+    .max(KYC_LIMITS.countryMax),
+  address: z
+    .string()
+    .trim()
+    .min(KYC_LIMITS.addressMin, "Enter your full residential address")
+    .max(KYC_LIMITS.addressMax),
+  idType: z.enum(ID_TYPE_IDS),
+  idNumber: z
+    .string()
+    .trim()
+    .min(KYC_LIMITS.idNumberMin, "Enter the document number")
+    .max(KYC_LIMITS.idNumberMax),
+});
+
+export type KycSubmissionInput = z.infer<typeof kycSubmissionSchema>;
+
+/**
+ * The reviewer's half. A rejection must carry an actionable reason — the same
+ * floor `lib/kyc/review.ts` enforces, read from the same constant so the two
+ * cannot drift.
+ */
+export const kycDecisionSchema = z
+  .object({
+    action: z.enum(KYC_ACTIONS),
+    reason: z.string().trim().max(KYC_LIMITS.reasonMax).optional(),
+  })
+  .refine(
+    (value) =>
+      value.action !== "REJECT" ||
+      (value.reason ?? "").trim().length >= KYC_LIMITS.reasonMin,
+    { message: "Give the member a reason they can act on", path: ["reason"] },
+  );
+
+export type KycDecisionInput = z.infer<typeof kycDecisionSchema>;
 
 /** First human-readable message from a Zod error. */
 export function firstError(error: z.ZodError): string {

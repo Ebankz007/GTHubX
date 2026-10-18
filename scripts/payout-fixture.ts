@@ -13,6 +13,12 @@
  *   registration and only credited through settlement; this overwrites that
  *   invariant and must never run outside a dev database.
  *
+ * The member is seeded **identity-verified**, because since Phase 7c
+ * `requestPayout` refuses anyone who is not: the fixture exists to exercise the
+ * payout rail, so it has to satisfy the platform's own precondition. Seeding
+ * that here — rather than having the smoke reach around the gate with SQL — is
+ * the difference between testing the real rail and testing a bypass of it.
+ *
  * Idempotent: wipes its OWN universe first (emails under
  * `@payout-fixture.test` — cascade removes their payouts, ledger entries
  * and sessions), then recreates it. The rank fixture (`@rank-fixture.test`)
@@ -58,6 +64,22 @@ async function main() {
       status: "ACTIVE",
       isActiveMember: true,
       emailVerifiedAt: new Date(),
+      // The payout gate (Phase 7c) reads this field, and the profile below is
+      // what a reviewer would have produced — so the fixture looks like a real
+      // verified member, not like a member with a flag flipped behind the gate.
+      kycStatus: "VERIFIED",
+      kycProfile: {
+        create: {
+          status: "VERIFIED",
+          legalName: "Payout Fixture Member",
+          country: "KE",
+          address: "Fixture House, Nairobi, Kenya",
+          idType: "NATIONAL_ID",
+          idNumber: "FIXTURE-0001",
+          submittedAt: new Date(),
+          reviewedAt: new Date(),
+        },
+      },
     },
   });
 

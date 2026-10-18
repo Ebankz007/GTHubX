@@ -209,3 +209,88 @@ export function registrationPaidTemplate(input: RegistrationPaidInput): EmailTem
     }),
   };
 }
+
+export type KycVerifiedInput = {
+  readonly siteName: string;
+  readonly name?: string | null;
+  readonly url: string;
+};
+
+/**
+ * "Your identity is verified." The one email in this phase a member actually
+ * wants: it is the moment the withdrawal gate opens.
+ */
+export function kycVerifiedTemplate(input: KycVerifiedInput): EmailTemplate {
+  const hello = greeting(input.name);
+
+  return {
+    subject: `Your ${input.siteName} identity is verified`,
+    text: [
+      hello,
+      "",
+      "Your identity has been verified. Withdrawals are now enabled on your account.",
+      "",
+      "You can review your verification status here:",
+      "",
+      input.url,
+    ].join("\n"),
+    html: renderLayout({
+      siteName: input.siteName,
+      heading: "Identity verified",
+      paragraphs: [
+        hello,
+        "Your identity has been verified. Withdrawals are now enabled on your account.",
+      ],
+      action: { label: "View my verification", url: input.url },
+    }),
+  };
+}
+
+export type KycRejectedInput = {
+  readonly siteName: string;
+  readonly name?: string | null;
+  /**
+   * The reviewer's reason, as typed. It is interpolated through
+   * `renderLayout`, which escapes it — an admin's free text lands in a
+   * browser, so it is treated as untrusted input, not as trusted copy.
+   */
+  readonly reason: string;
+  readonly url: string;
+};
+
+/**
+ * "We could not accept your submission." Deliberately not a dead end: the
+ * reason is stated, and the same page lets the member correct it and resubmit.
+ */
+export function kycRejectedTemplate(input: KycRejectedInput): EmailTemplate {
+  const hello = greeting(input.name);
+
+  return {
+    subject: `Your ${input.siteName} verification needs attention`,
+    text: [
+      hello,
+      "",
+      "We could not accept your identity submission.",
+      "",
+      `Reason given: ${input.reason}`,
+      "",
+      "You can correct it and submit again here:",
+      "",
+      input.url,
+      "",
+      "If you believe this is a mistake, reply to this email or open a support ticket.",
+    ].join("\n"),
+    html: renderLayout({
+      siteName: input.siteName,
+      heading: "Verification needs attention",
+      paragraphs: [
+        hello,
+        "We could not accept your identity submission. The reviewer gave this reason:",
+        input.reason,
+      ],
+      action: { label: "Review and resubmit", url: input.url },
+      footnote:
+        "If you believe this is a mistake, reply to this email or open a support ticket.",
+    }),
+  };
+}

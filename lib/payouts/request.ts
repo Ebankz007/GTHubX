@@ -20,6 +20,14 @@ import { PayoutError } from "./state";
  * `balanceCents` the moment the request is accepted, so the balance always
  * means FREE cash and an overdraft cannot be constructed by racing requests.
  * A rejection later writes the compensating `CREDIT/REFUND`.
+ *
+ * **The identity gate lives here, not in the route.** `lib/dashboard`'s
+ * verification page has told members since Phase 4 that verification is
+ * "required before any withdrawal can be processed", and until now nothing
+ * enforced it. Putting the check in the domain function rather than the HTTP
+ * handler means no future caller — a batch tool, an admin impersonation, a
+ * second route — can skip it. It runs before the Payout row is created, so a
+ * refused request leaves no trace of a withdrawal that never was.
  */
 export async function requestPayout(input: {
   client: Prisma.TransactionClient;
@@ -30,6 +38,20 @@ export async function requestPayout(input: {
   details?: string;
 }): Promise<{ payoutId: string; balanceAfterCents: number }> {
   const { client, userId, amountCents, method, destination, details } = input;
+
+  const user = await client.user.findUnique({
+    where: { id: userId },
+    select: { kycStatus: true },
+  });
+  if (!user) {
+    throw new PayoutError("not_found", "Account not found.");
+  }
+  if (user.kycStatus !== "VERIFIED") {
+    throw new PayoutError(
+      "kyc_required",
+      "Verify your identity before requesting a payout.",
+    );
+  }
 
   const payout = await client.payout.create({
     data: {
