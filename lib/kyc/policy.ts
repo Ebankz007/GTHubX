@@ -22,6 +22,23 @@
  * would be the single worst thing this phase could do. It is exactly how a
  * temporary liability becomes a permanent one.
  * ---------------------------------------------------------------------------
+ *
+ * What this module DOES decide, as of Phase 7d: how little of the member's
+ * identity we keep. The document *number* is no longer stored at all - only a
+ * keyed digest (dedup) and the last four characters (human reference). See
+ * `lib/kyc/identity.ts`. And identity fields are not kept forever: see
+ * `IDENTITY_RETENTION_DAYS` below.
+ *
+ * The eventual target for verification itself is to delegate the *check* to an
+ * identity provider and keep only its verdict plus a reference - the platform
+ * would then hold no identity document and no identity number, only the fact
+ * and the date. That is a change of *decider*, not of data model: the status
+ * machine, the audit trail, the withdrawal gate and this module's shape all
+ * stay exactly as they are, and `documentPolicy()` already reports whether
+ * bytes are collected. No placeholder mode constant is defined for it here,
+ * because a configuration value with one reachable value is not a seam - it is
+ * decoration.
+ * ---------------------------------------------------------------------------
  */
 
 /** Document types a member may present. Adding one is a policy change. */
@@ -130,6 +147,85 @@ export function documentPolicy(): DocumentPolicy {
 export const MIN_AGE_YEARS = 18;
 
 /**
+ * Fold a document number to a comparable form: trim, drop internal whitespace,
+ * upper-case.
+ *
+ * Case and spacing are presentation, not identity. A member who types
+ * `a0 1234567` on one attempt and `A01234567` on the next holds the same
+ * document, and a duplicate check that disagrees is a false negative. Both the
+ * keyed digest and the last-four derive from this, so they cannot be computed
+ * from differently-shaped inputs.
+ *
+ * Pure, and free of `node:crypto`, because `components/dashboard/kyc-form.tsx`
+ * is a client component that imports this module.
+ */
+export function normalizeIdNumber(value: string): string {
+  return value.trim().replace(/\s+/g, "").toUpperCase();
+}
+
+/**
+ * Document-number bounds.
+ *
+ * Deliberately loose. Document formats are country-specific and change without
+ * notice; a strict per-country pattern would refuse valid documents from
+ * everywhere it was not written for, and a member who cannot submit cannot be
+ * verified. These bounds reject the *obviously* wrong - an empty field, a
+ * paste of a paragraph, a placeholder like `-----` - and leave the real
+ * judgement to the reviewer, who is looking at the member's other details
+ * anyway.
+ */
+export const ID_NUMBER_MIN = 4;
+export const ID_NUMBER_MAX = 32;
+
+export function idNumberFormatOk(value: string): boolean {
+  const n = normalizeIdNumber(value);
+  if (n.length < ID_NUMBER_MIN || n.length > ID_NUMBER_MAX) return false;
+  // Letters, digits, hyphens and slashes cover every format we have seen.
+  if (!/^[A-Z0-9][A-Z0-9\-/]*$/.test(n)) return false;
+  // A single character repeated (`AAAA`, `1111`) is a placeholder, not a number.
+  if (/^(.)\1*$/.test(n)) return false;
+  return true;
+}
+
+/**
+ * How long identity *details* are kept, counted from the decision that closed
+ * the submission (or from submission, if it was never decided).
+ *
+ * The verdict outlives the evidence, on purpose: "this member was verified on
+ * 4 May 2026" is a fact the platform may need to state for years, while the
+ * name, birth date, address and document reference that supported it are not.
+ * After this window `scripts/purge-identity-data.ts` clears the details and
+ * leaves the status, the dates and the reviewer intact.
+ *
+ * One year is a starting point, not a compliance opinion - it is the kind of
+ * number that should come from counsel. It lives here so that when it does, the
+ * change is one line.
+ */
+export const IDENTITY_RETENTION_DAYS = 365;
+
+/**
+ * The columns the retention rule clears. Listed here rather than inline in the
+ * purge script so a new identity field cannot be added without appearing in
+ * this list being an obvious omission.
+ */
+export const IDENTITY_FIELDS = [
+  "legalName",
+  "dateOfBirth",
+  "country",
+  "address",
+  "idType",
+  "idNumberHash",
+  "idNumberLast4",
+] as const;
+
+export type IdentityField = (typeof IDENTITY_FIELDS)[number];
+
+/** The instant before which identity details are due for deletion. */
+export function identityPurgeCutoff(now: Date): Date {
+  return new Date(now.getTime() - IDENTITY_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+}
+
+/**
  * Field limits. The validator, the form and the reviewer's expectations all
  * read these, so a limit cannot exist in the UI but not at the edge.
  */
@@ -140,8 +236,8 @@ export const KYC_LIMITS = {
   countryMax: 64,
   addressMin: 10,
   addressMax: 400,
-  idNumberMin: 3,
-  idNumberMax: 64,
+  idNumberMin: ID_NUMBER_MIN,
+  idNumberMax: ID_NUMBER_MAX,
   reasonMin: 5,
   reasonMax: 400,
 } as const;

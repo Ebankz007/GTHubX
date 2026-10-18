@@ -33,10 +33,13 @@ import "dotenv/config";
 import { PrismaClient } from "../lib/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { hashPassword } from "../lib/password";
+import { hashIdNumber, idNumberLast4 } from "../lib/kyc/identity";
 
 const FIXTURE_DOMAIN = "@payout-fixture.test";
 const MEMBER_EMAIL = `payout${FIXTURE_DOMAIN}`;
 const MEMBER_PASSWORD = "Fixture-Pass-1";
+/** The fixture's document number, in raw form only long enough to derive from. */
+const FIXTURE_ID_NUMBER = "FIXTURE-0001";
 /** Seeded balance: enough for the smoke's happy paths (1000 hold, 800, 400). */
 const SEED_BALANCE_CENTS = 2000;
 
@@ -75,7 +78,11 @@ async function main() {
           country: "KE",
           address: "Fixture House, Nairobi, Kenya",
           idType: "NATIONAL_ID",
-          idNumber: "FIXTURE-0001",
+          // Derived exactly as a real submission derives it (Phase 7d): the raw
+          // number is never stored, so the fixture must not store one either —
+          // otherwise it would be the only row in the database that still could.
+          idNumberHash: hashIdNumber(FIXTURE_ID_NUMBER),
+          idNumberLast4: idNumberLast4(FIXTURE_ID_NUMBER),
           submittedAt: new Date(),
           reviewedAt: new Date(),
         },

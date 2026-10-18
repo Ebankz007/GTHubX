@@ -7,6 +7,7 @@ import {
   MAX_AGE_YEARS,
   MIN_AGE_YEARS,
   ageInYears,
+  idNumberFormatOk,
   isAdult,
 } from "@/lib/kyc/policy";
 import { KYC_ACTIONS } from "@/lib/kyc/state";
@@ -323,7 +324,11 @@ export const kycSubmissionSchema = z.object({
     .string()
     .trim()
     .min(KYC_LIMITS.idNumberMin, "Enter the document number")
-    .max(KYC_LIMITS.idNumberMax),
+    .max(KYC_LIMITS.idNumberMax)
+    .refine(
+      idNumberFormatOk,
+      "Enter the number exactly as it appears on the document",
+    ),
 });
 
 export type KycSubmissionInput = z.infer<typeof kycSubmissionSchema>;

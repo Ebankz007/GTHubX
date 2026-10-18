@@ -5,7 +5,7 @@ import type { KycStatus } from "@/lib/generated/prisma/enums";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { KycActions } from "@/components/admin/kyc-actions";
-import { ageInYears, documentPolicy, idTypeLabel } from "@/lib/kyc/policy";
+import { documentPolicy } from "@/lib/kyc/policy";
 
 export const metadata = { title: "Identity verification" };
 
@@ -40,13 +40,23 @@ function formatDate(value: Date | null) {
 }
 
 /**
- * Identity submissions, newest first.
+ * The review queue: who is waiting, and the controls to decide them.
  *
- * The reviewer sees everything they need to decide — the legal name, the date of
- * birth and the document number are the whole point of the queue, so they are
- * shown in full rather than masked. `documentPolicy()` states plainly that
- * document files are not collected on this deployment, so a reviewer is never
- * left wondering whether a missing attachment is a bug.
+ * ---------------------------------------------------------------------------
+ * Why this list is deliberately thin.
+ *
+ * Phase 7c rendered every member's legal name, birth date, address and document
+ * number straight into this table. Convenient, and wrong: a member's identity
+ * details are sensitive personal information, and a list page is a page that
+ * gets rendered by scrolling, by prefetching, by an admin who is looking for
+ * something else entirely. Access to it was neither necessary nor recorded.
+ *
+ * So the queue now shows what a reviewer needs to *triage* — who is waiting,
+ * how long, what happened last time — and the details live one click away on
+ * `/admin/kyc/[id]`, which writes an access record when it is opened. Opening a
+ * submission is the moment access to identity data becomes a decision, and a
+ * decision is something you can account for.
+ * ---------------------------------------------------------------------------
  */
 export default async function AdminKycPage({
   searchParams,
@@ -65,15 +75,10 @@ export default async function AdminKycPage({
       where: active === "ALL" ? undefined : { status: active },
       orderBy: [{ submittedAt: "desc" }],
       take: 50,
+      // No identity fields here, by design. See the header.
       select: {
         id: true,
         status: true,
-        legalName: true,
-        dateOfBirth: true,
-        country: true,
-        address: true,
-        idType: true,
-        idNumber: true,
         rejectionReason: true,
         submittedAt: true,
         reviewedAt: true,
@@ -109,7 +114,10 @@ export default async function AdminKycPage({
           <p className="text-xs text-faint">
             {policy.uploadEnabled
               ? "Document upload is enabled on this deployment."
-              : "Document upload is not enabled on this deployment — decisions rest on the details below. Document files are not collected yet."}
+              : "Document upload is not enabled on this deployment — decisions rest on the details a member typed. Document files are not collected yet."}
+          </p>
+          <p className="mt-1 text-xs text-faint">
+            Opening a submission records the access against your account.
           </p>
         </CardContent>
       </Card>
@@ -148,7 +156,6 @@ export default async function AdminKycPage({
                 <thead>
                   <tr className="border-b border-border text-left">
                     <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-faint">Member</th>
-                    <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-faint">Submitted details</th>
                     <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-faint">Status</th>
                     <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-faint">Submitted</th>
                     <th className="px-5 py-3 text-xs font-semibold uppercase tracking-wide text-faint">Decision</th>
@@ -158,36 +165,31 @@ export default async function AdminKycPage({
                   {submissions.map((s) => (
                     <tr key={s.id} className="align-top transition-colors hover:bg-elevated/50">
                       <td className="px-5 py-3">
-                        <p className="text-foreground">{s.user.fullName}</p>
+                        {/*
+                          A plain anchor, not `next/link`: the App Router
+                          prefetches Link targets on hover, and a prefetch would
+                          write an access record for a page nobody looked at.
+                          An audit trail of imagined views is worse than none.
+                        */}
+                        <a
+                          href={`/admin/kyc/${s.id}`}
+                          className="text-foreground underline decoration-border-strong underline-offset-4 transition-colors hover:text-brand"
+                        >
+                          {s.user.fullName}
+                        </a>
                         <p className="text-xs text-faint">{s.user.email}</p>
-                      </td>
-                      <td className="px-5 py-3">
-                        <p className="text-foreground">{s.legalName ?? "—"}</p>
-                        <p className="text-xs text-faint">
-                          {s.country ?? "—"}
-                          {s.dateOfBirth
-                            ? ` · born ${s.dateOfBirth.toISOString().slice(0, 10)} (${ageInYears(s.dateOfBirth, new Date())})`
-                            : ""}
-                        </p>
-                        <p className="text-xs text-faint">
-                          {idTypeLabel(s.idType)} · {s.idNumber ?? "—"}
-                        </p>
-                        {s.address ? (
-                          <p className="mt-1 max-w-[22rem] text-xs text-faint">
-                            {s.address}
-                          </p>
-                        ) : null}
-                        {s.status === "REJECTED" && s.rejectionReason ? (
-                          <p className="mt-1 max-w-[22rem] text-xs text-danger">
-                            Rejected: {s.rejectionReason}
-                          </p>
-                        ) : null}
+                        <p className="mt-1 text-xs text-faint">Review details →</p>
                       </td>
                       <td className="px-5 py-3">
                         <Badge variant={statusVariant(s.status)}>{s.status}</Badge>
                         {s.reviewedAt ? (
                           <p className="mt-1 text-xs text-faint">
                             reviewed {formatDate(s.reviewedAt)}
+                          </p>
+                        ) : null}
+                        {s.status === "REJECTED" && s.rejectionReason ? (
+                          <p className="mt-1 max-w-[18rem] text-xs text-danger">
+                            {s.rejectionReason}
                           </p>
                         ) : null}
                       </td>

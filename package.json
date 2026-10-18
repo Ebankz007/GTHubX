@@ -17,6 +17,7 @@
     "db:seed:admin": "tsx prisma/seed-admin.ts",
     "db:seed:rank-fixture": "tsx scripts/rank-fixture.ts",
     "db:seed:payout-fixture": "tsx scripts/payout-fixture.ts",
+    "db:purge:identity": "tsx scripts/purge-identity-data.ts",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate"
   },

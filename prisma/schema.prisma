@@ -1135,7 +1135,12 @@ model KycProfile {
   country         String?
   address         String?   @db.Text
   idType          String?
-  idNumber        String?
+  /// The document number is deliberately NOT stored. `idNumberHash` is an
+  /// HMAC-SHA256 keyed with KYC_ID_PEPPER, used only to notice the same person
+  /// registering twice; `idNumberLast4` is the human reference a reviewer or a
+  /// support agent can match a member against. See lib/kyc/identity.ts.
+  idNumberHash    String?
+  idNumberLast4   String?
   documents       Json?
   submittedAt     DateTime?
   reviewedAt      DateTime?

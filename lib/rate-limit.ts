@@ -61,14 +61,26 @@ export function resetRateLimit(key: string): void {
   buckets.delete(key);
 }
 
-/** Best-effort client identity for keying. Behind a proxy, trust the first XFF hop. */
-export function clientIp(request: Request): string {
-  const h = request.headers;
+/**
+ * Best-effort client identity from a header bag. Behind a proxy, trust the
+ * first XFF hop.
+ *
+ * Split out from `clientIp` so a server component — which has `headers()` but
+ * no `Request` — resolves the address the same way a route handler does. Two
+ * implementations of "where did this come from" would drift, and an audit row
+ * with a differently-derived IP is not comparable with the rest of the trail.
+ */
+export function clientIpFromHeaders(h: Headers): string {
   return (
     h.get("x-forwarded-for")?.split(",")[0]?.trim() ??
     h.get("x-real-ip") ??
     "unknown"
   );
+}
+
+/** Best-effort client identity for keying. Behind a proxy, trust the first XFF hop. */
+export function clientIp(request: Request): string {
+  return clientIpFromHeaders(request.headers);
 }
 
 export function rateLimitKey(request: Request, scope: string, extra = ""): string {

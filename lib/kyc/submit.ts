@@ -1,8 +1,9 @@
 import type { Prisma } from "@/lib/generated/prisma/client";
+import { hashIdNumber, idNumberLast4 } from "./identity";
 import { KycError, canSubmit } from "./state";
 
 /**
- * GTHubX — submit identity details for review (Phase 7c).
+ * GTHubX — submit identity details for review (Phase 7c, minimised in 7d).
  *
  * One transaction, two writes: the `KycProfile` (the submission) and the
  * denormalised `User.kycStatus` that the rest of the app gates on. They move
@@ -22,6 +23,16 @@ import { KycError, canSubmit } from "./state";
  * `documents` is left null. Nothing uploads files yet, and writing a
  * placeholder object there would put a fake answer where the reviewer expects
  * evidence. See `lib/kyc/policy.ts` for why the bytes are not collected.
+ *
+ * ---------------------------------------------------------------------------
+ * The document number stops here.
+ *
+ * `facts.idNumber` arrives raw and is never persisted: this function derives a
+ * keyed digest and the last four characters, and builds the Prisma `data` from
+ * those. The raw value is a local that dies with the call, and no write in this
+ * file can reach it — which is the property the live smoke proves by searching
+ * the whole database for the number afterwards and finding nothing.
+ * ---------------------------------------------------------------------------
  */
 
 export type KycFacts = {
@@ -30,6 +41,7 @@ export type KycFacts = {
   country: string;
   address: string;
   idType: string;
+  /** Raw, transient. Derived into `idNumberHash` + `idNumberLast4`, never stored. */
   idNumber: string;
 };
 
@@ -47,6 +59,17 @@ export async function submitKyc(input: {
   facts: KycFacts;
 }): Promise<KycSubmissionResult> {
   const { client, userId, facts } = input;
+
+  // The one place the raw number is read. Everything downstream is derived.
+  const identity = {
+    legalName: facts.legalName,
+    dateOfBirth: facts.dateOfBirth,
+    country: facts.country,
+    address: facts.address,
+    idType: facts.idType,
+    idNumberHash: hashIdNumber(facts.idNumber),
+    idNumberLast4: idNumberLast4(facts.idNumber),
+  };
 
   const user = await client.user.findUnique({
     where: { id: userId },
@@ -78,7 +101,7 @@ export async function submitKyc(input: {
     const claimed = await client.kycProfile.updateMany({
       where: { id: existing.id, status: { in: [...RESUBMITTABLE] } },
       data: {
-        ...facts,
+        ...identity,
         status: "PENDING",
         submittedAt: now,
         // A resubmission is a new decision to make: the previous reviewer's
@@ -103,7 +126,7 @@ export async function submitKyc(input: {
   let profileId: string;
   try {
     const created = await client.kycProfile.create({
-      data: { userId, ...facts, status: "PENDING", submittedAt: now },
+      data: { userId, ...identity, status: "PENDING", submittedAt: now },
       select: { id: true },
     });
     profileId = created.id;

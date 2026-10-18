@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { KycForm, type KycFormValues } from "@/components/dashboard/kyc-form";
 import { documentPolicy, idTypeLabel } from "@/lib/kyc/policy";
+import { idNumberReference } from "@/lib/kyc/identity";
 import { canSubmit } from "@/lib/kyc/state";
 
 export const metadata = { title: "Verification" };
@@ -39,6 +40,12 @@ const copy = {
  * `lib/kyc/policy.ts`, so what the member is told and what the reviewer expects
  * are the same fact. When document upload is not enabled on this deployment the
  * page **says so** rather than showing an upload control that cannot work.
+ *
+ * The document number is deliberately **not** read back into the form. The
+ * platform keeps only its last four characters, so on a resubmission the member
+ * re-enters it — and the page explains why, because a blank field with no
+ * explanation reads as a bug. Telling the member the number is not retained is
+ * the same claim the database now makes, stated where they can see it.
  */
 export default async function VerificationPage() {
   const user = await requireUser();
@@ -53,7 +60,7 @@ export default async function VerificationPage() {
       country: true,
       address: true,
       idType: true,
-      idNumber: true,
+      idNumberLast4: true,
       rejectionReason: true,
       submittedAt: true,
       reviewedAt: true,
@@ -70,7 +77,8 @@ export default async function VerificationPage() {
     country: profile?.country ?? "",
     address: profile?.address ?? "",
     idType: profile?.idType ?? "PASSPORT",
-    idNumber: profile?.idNumber ?? "",
+    // Always blank: we do not have it to prefill, by design.
+    idNumber: "",
   };
 
   return (
@@ -141,7 +149,15 @@ export default async function VerificationPage() {
               platform.
             </CardDescription>
           </CardHeader>
-          <CardContent>
+          <CardContent className="space-y-4">
+            {profile?.idNumberLast4 ? (
+              <p className="rounded-xl border border-border bg-elevated px-3.5 py-2.5 text-xs text-muted">
+                We keep only the last four characters of the document number you
+                gave us ({idNumberReference(profile.idNumberLast4)}), not the
+                whole number. Re-enter it below so the reviewer can check it
+                against your details again.
+              </p>
+            ) : null}
             <KycForm initial={initial} />
           </CardContent>
         </Card>
@@ -175,6 +191,9 @@ export default async function VerificationPage() {
           {profile?.idType ? (
             <p className="mt-4 text-xs text-faint">
               Presenting: {idTypeLabel(profile.idType)}
+              {profile.idNumberLast4
+                ? ` · document ${idNumberReference(profile.idNumberLast4)}`
+                : ""}
             </p>
           ) : null}
         </CardContent>

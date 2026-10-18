@@ -50,6 +50,17 @@ describe("kycSubmissionSchema — accepted input", () => {
       expect(kycSubmissionSchema.safeParse({ ...valid, idType }).success).toBe(true);
     }
   });
+
+  it("accepts hyphenated and slashed document numbers", () => {
+    for (const idNumber of ["AB-123/45", "1234-5678-9012", "P/1234567"]) {
+      expect(kycSubmissionSchema.safeParse({ ...valid, idNumber }).success).toBe(true);
+    }
+  });
+
+  it("accepts a number typed with internal spaces, because they are not identity", () => {
+    const parsed = kycSubmissionSchema.parse({ ...valid, idNumber: "A0 123 4567" });
+    expect(parsed.idNumber).toBe("A0 123 4567");
+  });
 });
 
 describe("kycSubmissionSchema — refused input", () => {
@@ -61,6 +72,11 @@ describe("kycSubmissionSchema — refused input", () => {
     ["an address that is a single word", { ...valid, address: "Lagos" }],
     ["a missing document number", { ...valid, idNumber: "" }],
     ["a document number past the limit", { ...valid, idNumber: "9".repeat(KYC_LIMITS.idNumberMax + 1) }],
+    ["a document number that is too short", { ...valid, idNumber: "123" }],
+    ["a document number that is all punctuation", { ...valid, idNumber: "---" }],
+    ["a document number that is all the same character", { ...valid, idNumber: "AAAA" }],
+    ["a document number that starts with punctuation", { ...valid, idNumber: "-A123" }],
+    ["a document number that contains spaces only", { ...valid, idNumber: "     " }],
     ["an unknown document type", { ...valid, idType: "BUS_PASS" }],
     ["a lowercase document type", { ...valid, idType: "passport" }],
     ["a date of birth in the wrong format", { ...valid, dateOfBirth: "04/05/1990" }],
