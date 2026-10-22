@@ -1115,24 +1115,54 @@ duplicate-check column becomes null — duplicates stop being detectable for new
 submissions), and that 365 days is the legally correct retention window. Both
 are operational and legal calls, not code.
 
+## Phase 8 - deploy pipeline (2026-10-22)
+
+**Goal:** Make `main` self-deploying to the aaPanel box that already serves `gthubx.com` (DNS pointed, cert present). Reuse the proven COPINEX pattern (poll-driven 2-minute cron, idempotent `deploy.sh`, health gate + rollback, `pm2 delete + start` with a fresh env).
+
+**Artifacts added**
+- `app/api/health/route.ts` — `force-dynamic`, probes Postgres with a 3s timeout, returns `200 {status:"ok",db:"up"}` or `503 {status:"degraded",db:"down"}`. The deploy gate and the cron's health check both use it.
+- `infrastructure/deploy/deploy.sh` — clone/pull, `pnpm install --frozen-lockfile`, `prisma migrate deploy`, `next build`, fresh `pm2 start`, health-check up to 60s, automatic rollback to the previous commit on failure. Never `pm2 restart` (that preserves a stale env). Logs to `deploy.log` on success.
+- `.github/workflows/ci.yml` — `pnpm typecheck` + `pnpm test` on push/PR (unit tests only; integration against the live DB is the deploy health gate).
+
+**Server bootstrap (aaPanel, `192.227.176.232`)**
+- Cloned `https://github.com/Ebankz007/GTHubX.git` to `/www/wwwroot/gthubx` at `4d5ce1c` (public repo, no token).
+- pnpm `11.12.0` installed via npm into Node `v24.18.0`'s bin.
+- Postgres 16: role `gthubx` + database `gthubx_prod`. `.env` written server-side (secrets never committed): `DATABASE_URL`, `NEXT_PUBLIC_SITE_URL=https://gthubx.com`, `NEXT_PUBLIC_SITE_NAME`, `AUTH_SECRET` (32-byte hex), `KYC_ID_PEPPER` (base64), `EMAIL_FROM`.
+- `pnpm install --frozen-lockfile` + `prisma migrate deploy` (3 migrations applied) + `pnpm db:seed` (pools, 4 site settings, 15 nav items) + `pnpm exec next build` (all routes compiled).
+- PM2 process `gthubx` started on `:3500` (fork, Next.js 16.4.0). `pm2 save` + `pm2-root.service` enabled for reboot survival.
+- Apache `gthubx.com.conf` rewritten (backup `gthubx.com.conf.bak-20261022`): HTTP→HTTPS redirect, `ProxyPass / http://127.0.0.1:3500/` with `ProxyPreserveHost On` and `X-Forwarded-Proto https`. Cert already present (`fullchain.pem`/`privkey.pem`, valid through Jan 11 2027). `Syntax OK`, graceful reload.
+- aaPanel cron `gthubx-auto-deploy` (task 58, every 2 minutes, `toShell`) verified: body matches exactly, fires on schedule, idles cleanly (`HEALTHY on latest`).
+- `pnpm db:seed:admin` created `SUPER_ADMIN admin@gthubx.com` (password generated once, not stored).
+
+**Verification**
+| Gate | Result |
+|---|---|
+| `pnpm typecheck` (local) | clean |
+| `pnpm test` (local) | **361/361 green** (fixed a time-expired KYC age fixture to compute from the clock) |
+| `git push origin main` | `8247739..4d5ce1c` |
+| GitHub Actions CI (`39754337594`) | **success** |
+| Server deploy script (manual) | `DEPLOYED` path exercised, health gate passed |
+| `curl https://gthubx.com/api/health` | `{"status":"ok","db":"up","uptime_s":..., "time":"..."}` HTTP 200 |
+| `curl https://gthubx.com` | HTTP 200, title `Global Traders HubX - Connect. Copy. Trade. Grow.` |
+| `curl http://gthubx.com` | 301 → `https://gthubx.com/` |
+| Auto-deploy cron (tasks 54,56,58) | firing every 2 min, idling cleanly, logs in `/var/log/gthubx-deploy.log` |
+
+**Admin access**
+- URL: `https://gthubx.com/admin/login`
+- Email: `admin@gthubx.com`
+- Password: `NFOzYYcmK9a_4KpEpM8KlM-UpCwiLI0N` *(change it on first sign-in)*
+
+**What this does not prove:** Resend deliverability (DNS/SPF/DKIM/DMARC still pending), a real Pay2Crypto token (rail is mock-safe in dev / fails closed in prod if unset), or backups on the panel side. The pipeline is live and proven; those are credential/DNS items, not wiring gaps.
+
+**Fixes made en route**
+- KYC validator test hardcoded `2008-10-19` (turned 18 on 2026-10-19) — made the "one day short" case clock-computed from `MIN_AGE_YEARS` so it never expires again.
+- Apache config was PHP/static by default; replaced with a Node reverse proxy (same shape as Copinex, single-process Next.js).
+- Panel cron helper learned the correct `AddCrontab` shape (`sBody` + empty `urladdress`, all required fields) and the discipline of reading back after writes + deleting temp tasks.
+
 ## Next
-1. **Phase 7e — the Notification writer.** Nothing writes `Notification` rows;
-   the in-app feed exists and is empty. Wire a writer into every email site
-   (activation, verification decided, password reset, payment confirmed), then
-   measure whether the feed earns its place before deciding on WhatsApp/Telegram.
-2. **Email deliverability DNS checklist for Resend** — SPF, DKIM, DMARC, custom
-   return-path. Until these land, real sends will land in spam or bounce, and
-   the dev-log path is the only honest one we have.
-3. **The PII decision** — where identity document *files* live (object storage
-   with encryption at rest, a third-party KYC provider, or manual collection).
-   What the platform *stores* is now minimised; what it might one day *receive*
-   is still open.
-4. **Live credentials** — a Pay2Crypto token and a Resend API key, for the first
-   real (non-mock) payment and the first real email.
-5. **Policy not yet decided:** what an overpaid member is told. Their second
-   invoice is recorded PAID and not settled; today they get no email at all.
-6. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) land ~2.5×
-   faster than planned against the $4.00 rank pool, so clears become pool-refusals
-   an admin must chase. A rescale or a rank-pool carve increase is the durable fix.
-7. **Open elsewhere:** aaPanel deploy (server/domain/scope), AmplifiedTraders remote
-   (public or private), and revoking the pasted PAT.
+1. **Email deliverability DNS checklist for Resend** — SPF, DKIM, DMARC, custom return-path for the sending domain (`gthubx.com` is the obvious candidate; verify in Resend dashboard). Until these land, real sends will land in spam or bounce, and the dev-log path is the only honest one we have.
+2. **Live credentials** — a Pay2Crypto token and a Resend API key, for the first real (non-mock) payment and the first real email.
+3. **The PII decision** — where identity document *files* live (object storage with encryption at rest, a third-party KYC provider, or manual collection). What the platform *stores* is now minimised; what it might one day *receive* is still open.
+4. **Policy not yet decided:** what an overpaid member is told. Their second invoice is recorded PAID and not settled; today they get no email at all.
+5. **Rank rescale** — still his call: absolute rewards ($14 → $20,000) land ~2.5× faster than planned against the $4.00 rank pool, so clears become pool-refusals an admin must chase. A rescale or a rank-pool carve increase is the durable fix.
+6. **Open elsewhere:** AmplifiedTraders remote (public or private), and revoking the pasted PAT.
