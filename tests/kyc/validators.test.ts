@@ -4,7 +4,7 @@ import {
   kycSubmissionSchema,
   firstError,
 } from "@/lib/validators";
-import { ID_TYPE_IDS, KYC_LIMITS, MAX_AGE_YEARS } from "@/lib/kyc/policy";
+import { ID_TYPE_IDS, KYC_LIMITS, MAX_AGE_YEARS, MIN_AGE_YEARS } from "@/lib/kyc/policy";
 
 /**
  * The edge. Two things here are load-bearing:
@@ -82,7 +82,26 @@ describe("kycSubmissionSchema — refused input", () => {
     ["a date of birth in the wrong format", { ...valid, dateOfBirth: "04/05/1990" }],
     ["a date of birth that is not a real day", { ...valid, dateOfBirth: "2024-02-31" }],
     ["a date of birth in the future", { ...valid, dateOfBirth: "2030-01-01" }],
-    ["an applicant one day short of the minimum age", { ...valid, dateOfBirth: "2008-10-19" }],
+    // Computed, not hardcoded: the schema judges age against the real clock,
+    // so a literal "one day short" DOB expires the day the birthday arrives
+    // (a hardcoded 2008-10-19 silently became an of-age adult on 2026-10-19
+    // and flipped this case from refusal to acceptance). Someone who turns
+    // MIN_AGE_YEARS tomorrow is one day short today, every day, forever.
+    [
+      "an applicant one day short of the minimum age",
+      {
+        ...valid,
+        dateOfBirth: new Date(
+          Date.UTC(
+            new Date().getUTCFullYear() - MIN_AGE_YEARS,
+            new Date().getUTCMonth(),
+            new Date().getUTCDate() + 1,
+          ),
+        )
+          .toISOString()
+          .slice(0, 10),
+      },
+    ],
     ["an impossible age", { ...valid, dateOfBirth: `${new Date().getUTCFullYear() - MAX_AGE_YEARS - 5}-01-01` }],
     ["a missing date of birth", { ...valid, dateOfBirth: undefined }],
   ];
