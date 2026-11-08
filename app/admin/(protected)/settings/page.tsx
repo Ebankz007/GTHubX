@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { SETTING_DEFINITIONS } from "@/lib/site-settings";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { SettingForm } from "@/components/admin/settings-form";
+import { ChangePasswordForm } from "@/components/admin/change-password-form";
 
 export const metadata = { title: "Settings" };
 
@@ -54,6 +55,8 @@ export default async function AdminSettingsPage() {
           );
         })}
       </div>
+
+      <ChangePasswordForm />
     </div>
   );
 }
