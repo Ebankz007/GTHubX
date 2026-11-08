@@ -36,12 +36,13 @@ export type PublicNavItem = {
 export const PUBLIC_NAV: readonly PublicNavItem[] = [
   // Header — also the source of the footer's Platform column (minus Home).
   { id: "nav-header-home", label: "Home", href: "/", group: "HEADER", location: "HEADER", order: 1, provisioned: true },
-  { id: "nav-header-copy", label: "Copy Trading", href: "/copy-trading", group: "HEADER", location: "HEADER", order: 2, provisioned: true },
+  { id: "nav-header-pamm", label: "PAMM", href: "https://pamm.gthubx.com", group: "HEADER", location: "HEADER", order: 2, provisioned: true },
   { id: "nav-header-packages", label: "Packages", href: "/packages", group: "HEADER", location: "HEADER", order: 3, provisioned: true },
-  { id: "nav-header-traders", label: "Traders", href: "/traders", group: "HEADER", location: "HEADER", order: 4, provisioned: true },
-  { id: "nav-header-community", label: "Community", href: "/community", group: "HEADER", location: "HEADER", order: 5, provisioned: true },
-  { id: "nav-header-network", label: "Network", href: "/network", group: "HEADER", location: "HEADER", order: 6, provisioned: true },
-  { id: "nav-header-education", label: "Education", href: "/education", group: "HEADER", location: "HEADER", order: 7, provisioned: true },
+  { id: "nav-header-community", label: "Community", href: "/community", group: "HEADER", location: "HEADER", order: 4, provisioned: true },
+  { id: "nav-header-telegram", label: "Telegram", href: "https://t.me/gthubx", group: "HEADER", location: "HEADER", order: 5, provisioned: true },
+  { id: "nav-header-whatsapp", label: "WhatsApp", href: "https://whatsapp.com/channel/000000000000000000", group: "HEADER", location: "HEADER", order: 6, provisioned: true },
+  { id: "nav-header-network", label: "Referral Network", href: "/network", group: "HEADER", location: "HEADER", order: 7, provisioned: true },
+  { id: "nav-header-education", label: "Education", href: "/education", group: "HEADER", location: "HEADER", order: 8, provisioned: true },
 
   // Footer — Company.
   { id: "nav-footer-about", label: "About", href: "/about", group: "COMPANY", location: "FOOTER", order: 1, provisioned: true },

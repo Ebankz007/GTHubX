@@ -227,7 +227,7 @@ export default async function DashboardPage() {
       </Card>
 
       <p className="text-xs text-faint">
-        Wallet top-ups, copy trading, packages and support tickets are not yet
+        Wallet top-ups, PAMM access, packages and support tickets are not yet
         enabled on this account. {openTickets > 0 && `${openTickets} open ticket(s). `}
         They arrive with the later build phases.
       </p>

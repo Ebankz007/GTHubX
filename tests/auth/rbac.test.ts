@@ -33,7 +33,7 @@ describe("role → permission matrix", () => {
     expect(hasPermission("CONTENT_ADMIN", "users")).toBe(false);
     expect(hasPermission("FINANCE_ADMIN", "withdrawals")).toBe(true);
     expect(hasPermission("FINANCE_ADMIN", "content")).toBe(false);
-    expect(hasPermission("TRADER_ADMIN", "copytrading")).toBe(true);
+    expect(hasPermission("TRADER_ADMIN", "pamm")).toBe(true);
     expect(hasPermission("TRADER_ADMIN", "deposits")).toBe(false);
   });
 

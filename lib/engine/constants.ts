@@ -29,7 +29,7 @@ export const PLATFORM_FEE_CENTS = 500;
 /** The gross amount charged for a registration: $50.00 + $5.00. */
 export const REGISTRATION_GROSS_CENTS = REGISTRATION_FEE_CENTS + PLATFORM_FEE_CENTS;
 
-/** Minimum a client must fund into their OWN broker account to activate copy-trading. Not revenue. */
+/** Minimum a client must fund into their OWN broker account to activate PAMM. Not revenue. */
 export const MIN_FUNDING_CENTS = 5000;
 
 /** Max direct placements per matrix position (3x3 matrix). */

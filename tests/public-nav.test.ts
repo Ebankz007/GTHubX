@@ -54,8 +54,11 @@ describe("public navigation", () => {
     // The defect this suite exists for: three hand-maintained link lists
     // drifted apart and 15 of 18 public links 404'd on a live server. A link
     // that is neither a real page nor a declared pending page fails here.
+    // External links (http:// or https://) point off-site and are exempt.
     const known = new Set([...staticRoutes, ...ALL_PENDING_PATHS]);
-    const dead = ALL_PUBLIC_HREFS.filter((href) => !known.has(href));
+    const dead = ALL_PUBLIC_HREFS.filter(
+      (href) => !href.startsWith("http://") && !href.startsWith("https://") && !known.has(href),
+    );
     expect(dead, `dead nav links: ${dead.join(", ")}`).toEqual([]);
   });
 
@@ -72,17 +75,22 @@ describe("public navigation", () => {
 
   it("every provisioned nav row has a route or pending entry behind its url", () => {
     const known = new Set([...staticRoutes, ...ALL_PENDING_PATHS]);
-    const dead = PROVISIONABLE_NAV.filter((n) => !known.has(n.href));
+    const dead = PROVISIONABLE_NAV.filter(
+      (n) =>
+        !n.href.startsWith("http://") &&
+        !n.href.startsWith("https://") &&
+        !known.has(n.href),
+    );
     expect(dead.map((n) => n.id)).toEqual([]);
   });
 
   it("header renders six links: Home is on the logo, not duplicated", () => {
-    expect(HEADER_LINKS).toHaveLength(6);
+    expect(HEADER_LINKS).toHaveLength(7);
     expect(HEADER_LINKS.some((n) => n.href === "/")).toBe(false);
   });
 
   it("footer columns cover every group exactly once", () => {
-    expect(FOOTER_PLATFORM).toHaveLength(6);
+    expect(FOOTER_PLATFORM).toHaveLength(7);
     expect(FOOTER_COMPANY).toHaveLength(6);
     expect(FOOTER_LEGAL).toHaveLength(4);
     const covered = [...FOOTER_PLATFORM, ...FOOTER_COMPANY, ...FOOTER_LEGAL].map(

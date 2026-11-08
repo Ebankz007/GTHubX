@@ -17,12 +17,12 @@ export function Footer() {
           <div>
             <Logo />
             <p className="mt-4 max-w-xs text-sm leading-relaxed text-muted">
-              A global community for traders and investors — copy trading,
+              A global community for traders and investors — PAMM access,
               structured participation, referral networking, and education in one
               hub.
             </p>
             <p className="mt-4 font-display text-sm font-semibold text-brand">
-              Connect. Copy. Trade. Grow.
+              Connect. PAMM. Trade. Grow.
             </p>
           </div>
 

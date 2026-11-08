@@ -3,7 +3,7 @@ import { ButtonLink } from "@/components/ui/button";
 import { Reveal } from "@/components/site/reveal";
 
 const HIGHLIGHTS = [
-  { icon: TrendingUp, label: "Copy Trading" },
+  { icon: TrendingUp, label: "PAMM" },
   { icon: Globe2, label: "Global Network" },
   { icon: Users, label: "Community" },
   { icon: BookOpen, label: "Education" },
@@ -24,7 +24,7 @@ export function Hero() {
 
           <Reveal delay={60}>
             <h1 className="mt-6 font-display text-4xl font-bold leading-[1.05] tracking-tight sm:text-5xl lg:text-6xl">
-              <span className="text-gradient-brand">Connect. Copy.</span>
+              <span className="text-gradient-brand">Connect. PAMM.</span>
               <br />
               Trade. Grow.
             </h1>
@@ -32,9 +32,10 @@ export function Hero() {
 
           <Reveal delay={120}>
             <p className="mt-6 max-w-xl text-base leading-relaxed text-muted sm:text-lg">
-              A global community for traders and investors. Access copy trading,
-              structured participation, referral opportunities, and a growing
-              network of traders — all from one platform.
+              A global community for traders and investors. Access PAMM pools
+              through our partner broker, structured participation, referral
+              opportunities, and a growing network of traders — all from one
+              platform.
             </p>
           </Reveal>
 

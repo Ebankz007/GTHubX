@@ -11,7 +11,7 @@ describe("cn", () => {
 describe("slugify", () => {
   it("lowercases, strips punctuation, and hyphenates", () => {
     expect(slugify("Global Traders HubX!")).toBe("global-traders-hubx");
-    expect(slugify("  Copy   Trading  ")).toBe("copy-trading");
+    expect(slugify("  PAMM   Access  ")).toBe("pamm-access");
     expect(slugify("A_B-C")).toBe("a-b-c");
   });
 });

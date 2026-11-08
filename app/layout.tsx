@@ -30,15 +30,15 @@ const siteUrl = siteOrigin();
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   title: {
-    default: "Global Traders HubX — Connect. Copy. Trade. Grow.",
+    default: "Global Traders HubX — Connect. PAMM. Trade. Grow.",
     template: "%s · Global Traders HubX",
   },
   description:
-    "Global Traders HubX is a digital trading community connecting traders and investors through copy trading, structured participation, referral networking, and a global trader community.",
+    "Global Traders HubX is a digital trading community connecting traders and investors through trade signals, PAMM access, structured participation, referral networking, and a global trader community.",
   applicationName: siteName(),
   keywords: [
     "trading community",
-    "copy trading",
+    "PAMM",
     "traders network",
     "investment community",
     "referral network",
@@ -49,16 +49,16 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     siteName: siteName(),
-    title: "Global Traders HubX — Connect. Copy. Trade. Grow.",
+    title: "Global Traders HubX — Connect. PAMM. Trade. Grow.",
     description:
-      "A global community for traders and investors — copy trading, participation, networking, and education in one hub.",
+      "A global community for traders and investors — trade signals, PAMM access, networking, and education in one hub.",
     url: siteUrl,
   },
   twitter: {
     card: "summary_large_image",
-    title: "Global Traders HubX — Connect. Copy. Trade. Grow.",
+    title: "Global Traders HubX — Connect. PAMM. Trade. Grow.",
     description:
-      "A global community for traders and investors — copy trading, participation, networking, and education in one hub.",
+      "A global community for traders and investors — trade signals, PAMM access, networking, and education in one hub.",
   },
   robots: { index: true, follow: true },
 };

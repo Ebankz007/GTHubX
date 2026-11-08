@@ -14,7 +14,7 @@ export const PERMISSIONS = [
   "kyc",
   "messages",
   "packages",
-  "copytrading",
+  "pamm",
   "network",
   "community",
   "education",
@@ -55,7 +55,7 @@ export const ROLE_PERMISSIONS: Record<AdminRole, readonly Permission[]> = {
     "reports",
   ],
   NETWORK_ADMIN: ["dashboard", "network", "reports"],
-  TRADER_ADMIN: ["dashboard", "copytrading"],
+  TRADER_ADMIN: ["dashboard", "pamm"],
 };
 
 export function rolePermissions(role: AdminRole): readonly Permission[] {
@@ -93,7 +93,7 @@ export const ADMIN_AREA_PERMISSIONS: Record<string, Permission> = {
   deposits: "deposits",
   withdrawals: "withdrawals",
   packages: "packages",
-  copy: "copytrading",
+  pamm: "pamm",
   network: "network",
   community: "community",
   content: "content",

@@ -37,13 +37,13 @@ pure TS and dependency-free, so extraction is cheap.)*
 ```
 GTHubX/
   app/
-    (public)/            home, about, copy-trading, packages, traders, community,
+    (public)/            home, about, packages, traders, community,
                          network, education, faq, blog, contact, legal pages
     (auth)/              login, register, forgot/reset-password, verify-email
     dashboard/           client portal (auth-gated)
-      {portfolio,copy,packages,network,wallet,transactions,community,notifications,settings,kyc,support}
+      {portfolio,pamm,packages,network,wallet,transactions,community,notifications,settings,kyc,support}
     admin/               operations admin (RBAC-gated)
-      {users,kyc,deposits,withdrawals,packages,copy,network,community,content,blog,
+      {users,kyc,deposits,withdrawals,packages,pamm,network,community,content,blog,
        faq,media,messages,settings,audit,team,reports}
     api/                 route handlers (auth, contact, webhooks/*)
     layout.tsx · globals.css · sitemap.ts · robots.ts · not-found.tsx
@@ -110,9 +110,9 @@ guards. Each action enforces the same permission as its page.
 | `SUPPORT_ADMIN` | users, messages, tickets, kyc review, community reports |
 | `FINANCE_ADMIN` | deposits, withdrawals, packages, commissions, payouts, ledger |
 | `NETWORK_ADMIN` *(new)* | referral tree, ranks, pools, commission review |
-| `TRADER_ADMIN` *(new)* | traders, copy relationships, broker links |
+| `TRADER_ADMIN` *(new)* | traders, PAMM links, broker links |
 
-Permissions: `dashboard, content, blog, faq, media, users, kyc, messages, packages, copytrading,
+Permissions: `dashboard, content, blog, faq, media, users, kyc, messages, packages, pamm,
 network, community, education, deposits, withdrawals, ledger, reports, settings, audit, team`.
 Guarded by a single `lib/rbac.ts` matrix. **No admin inherits superadmin by default.**
 

@@ -12,12 +12,12 @@ traders, and grow through a referral network.
 
 ## 2. Positioning
 Global Traders HubX is a digital trading community that connects people with smarter
-ways to participate in the financial markets through copy trading, structured
+ways to participate in the financial markets through PAMM access, structured
 investment packages, referral opportunities, and an active trader network.
 
 ## 3. Core brand promise
 **Trade. Connect. Grow.**
-- **Trade** — copy trading and market participation
+- **Trade** — PAMM access and market participation
 - **Invest** — structured investment packages
 - **Connect** — referral and networking opportunities
 - **Grow** — education, community, long-term development
@@ -45,7 +45,7 @@ To become a trusted global hub for traders, investors, and financial communities
 
 ### COPY — *Follow. Learn. Trade.*
 Let members follow selected traders and automatically replicate their activity
-through supported copy-trading technology.
+through supported PAMM technology.
 
 ### INVEST — *Choose. Participate. Grow.*
 Structured investment packages designed around different participation levels and
@@ -66,7 +66,7 @@ insights, events, and networking.
 > **GLOBAL TRADERS HUBX**
 > ## Connect. Copy. Trade. Grow.
 > A global community for traders and investors.
-> Access copy trading, investment packages, referral opportunities, and a growing
+> Access PAMM pools, investment packages, referral opportunities, and a growing
 > network of traders—all from one powerful platform.
 > **[Get Started] [Explore the Platform]**
 

@@ -9,10 +9,10 @@ Assumptions are marked **[ASSUMPTION]** and may be overridden.*
 | Project name | **GTHubX** (brand: **Global Traders HubX**) |
 | Project type | Full-stack web platform — public marketing site + client portal + admin + superadmin |
 | Repository | NEW at `C:\BerfamWorks\GTHubX` (reuses Aglotrends engine + CopiPilot architecture) |
-| Positioning | "Digital trading community, not a broker" — four pillars: Copy · Invest · Network · Community |
+| Positioning | "Digital trading community, not a broker" — four pillars: PAMM · Invest · Network · Community |
 
 ## Business purpose
-A single hub where retail participants copy experienced traders, participate in structured
+A single hub where retail participants access PAMM through a broker link, participate in structured
 packages, grow through a referral network, and learn inside a community — monetized via
 membership/packages and broker revenue-share. **Business model and custody posture are the
 two open decisions (see `PLAN.md` §0).**

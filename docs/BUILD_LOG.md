@@ -51,7 +51,7 @@ stripped `_` before the later `[\s_-]+` could convert it, so `"A_B"` → `"ab"`.
 Fixed to keep `_` through the first pass.
 
 **Known limitations:** no DB/auth/money yet (Phase 2+). Public nav links to routes that
-do not exist yet (copy-trading, packages, traders, community, network, education, about,
+do not exist yet (packages, traders, community, network, education, about,
 contact, faq, blog, login, register) — they will 404 until built. **Nothing committed.**
 
 ## Brand rename — done (2026-10-14)
@@ -257,7 +257,7 @@ that branch runs.
 - **Wallet** — page can render a real zero-balance, but has nothing to *do* until the
   ledger moves (Phase 6).
 - **Network** — `Referral` / `MatrixPosition` are engine-owned, created in Phase 6.
-- **Packages / copy trading** — blocked on Henry's package tiers, broker list and trader list.
+- **Packages / PAMM** — blocked on Henry's package tiers, broker list and PAMM link.
 
 ## Phase 5a — admin foundation (2026-10-14)
 
@@ -517,7 +517,7 @@ better made when an admin nav editor is actually specified, not speculatively no
 | Live smoke (cold start + verified clean shutdown) | ✅ **85/85** |
 
 Smoke coverage: all 17 public routes → 200; four legacy paths → 404; unknown path → 404;
-homepage advertises `/copy-trading` and `/legal/terms` and does **not** advertise the old
+homepage advertises the PAMM broker link and `/legal/terms` and does **not** advertise the old
 `/terms`; unpublished pages state "Not yet published" and contain no illustrative content.
 
 ## Phase 6a — engine integration: the money-write spine (2026-10-17)

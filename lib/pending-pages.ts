@@ -18,7 +18,6 @@ export type PendingPage = {
 };
 
 export const PENDING_PAGES: Record<string, PendingPage> = {
-  "copy-trading": { title: "Copy Trading" },
   packages: { title: "Packages" },
   traders: { title: "Traders" },
   community: { title: "Community" },
@@ -37,7 +36,7 @@ export const PENDING_LEGAL_PAGES: Record<string, PendingPage> = {
   cookies: { title: "Cookie Policy" },
 };
 
-/** Top-level pending paths, e.g. `["/copy-trading", "/packages", ...]`. */
+/** Top-level pending paths, e.g. `["/packages", ...]`. */
 export const PENDING_TOP_LEVEL_PATHS = Object.keys(PENDING_PAGES).map(
   (slug) => `/${slug}`,
 );

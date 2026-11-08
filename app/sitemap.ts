@@ -4,7 +4,6 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3500";
 
 const PUBLIC_ROUTES = [
   "",
-  "/copy-trading",
   "/packages",
   "/traders",
   "/community",

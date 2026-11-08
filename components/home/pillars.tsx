@@ -3,10 +3,10 @@ import { Reveal } from "@/components/site/reveal";
 
 const PILLARS = [
   {
-    icon: Repeat2,
-    key: "Copy",
-    promise: "Follow. Learn. Trade.",
-    body: "Follow selected traders and participate alongside experienced market participants through supported copy-trading technology.",
+    icon: Layers,
+    key: "PAMM",
+    promise: "Access. Participate. Grow.",
+    body: "PAMM pools run on our partner broker — your capital stays with the broker, profits are shared by pool share after the manager's fee. Click through to review terms and accept risk before joining.",
   },
   {
     icon: Layers,
@@ -40,7 +40,7 @@ export function Pillars() {
             One platform. Multiple opportunities.
           </h2>
           <p className="mt-4 text-muted">
-            Global Traders HubX brings copy trading, structured participation,
+            Global Traders HubX brings PAMM access, structured participation,
             referral networking, and a trader community together into one
             connected ecosystem.
           </p>

@@ -9,10 +9,10 @@
 
 ## What this is
 **Global Traders HubX** — a digital trading community (not a broker) bundling four
-pillars: **copy trading**, **structured investment packages**, a **referral/network**
+pillars: **PAMM**, **structured investment packages**, a **referral/network**
 layer, and a **trader community**.
 
-**Connect. Copy. Trade. Grow.**
+**Connect. PAMM. Trade. Grow.**
 
 ## Open questions (blocking)
 1. **New venture, rebrand of Aglotrends, or consolidation?** The pillars overlap

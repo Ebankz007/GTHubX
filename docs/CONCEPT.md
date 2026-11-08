@@ -6,7 +6,7 @@
 
 ## 1. One-paragraph thesis
 Global Traders HubX is a **digital trading community** — not a broker. It bundles four
-pillars into one platform: **copy trading**, **structured investment packages**, a
+pillars into one platform: **PAMM access**, **structured investment packages**, a
 **referral/network** layer, and a **trader community**. It targets retail
 participants who want exposure to financial markets but lack the skill or time to
 trade directly, and who are motivated by community, status, and referral income.
@@ -22,7 +22,7 @@ Primary: retail participants (aspirational, community-driven, referral-motivated
 Secondary: traders who want a distribution channel and followers.
 
 ## 4. What it displaces
-The incumbent: standalone brokers (MT5/CFD) and copy-trading plugins (MQL5 signals,
+The incumbent: standalone brokers (MT5/CFD) and PAMM plugins (MQL5 signals,
 ZuluTrade, etc.). The pitch is **ecosystem over tool** — copy + invest + network +
 community in one place, wrapped in a premium fintech brand.
 
