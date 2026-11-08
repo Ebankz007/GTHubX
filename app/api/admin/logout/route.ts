@@ -1,7 +1,9 @@
 import { logoutAdmin } from "@/lib/auth";
+import { redirect } from "next/navigation";
 
-/** POST /api/admin/logout — revoke the admin session and clear its cookie. */
+/** POST /api/admin/logout — revoke the admin session, clear its cookie, and
+ *  send the admin back to the admin login page. */
 export async function POST() {
   await logoutAdmin();
-  return Response.json({ ok: true });
+  redirect("/admin/login");
 }

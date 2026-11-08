@@ -2,15 +2,91 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { Menu, X } from "lucide-react";
+import { ChevronRight, Menu, X } from "lucide-react";
 import { Logo } from "./logo";
 import { ButtonLink } from "@/components/ui/button";
-import { HEADER_LINKS } from "@/lib/public-nav";
+import { HEADER_LINKS, type PublicNavItem } from "@/lib/public-nav";
 import { cn } from "@/lib/utils";
 
 // One source of truth, shared with the footer, the seed and the guard test —
 // this used to be a hardcoded copy that drifted from both.
 const NAV = HEADER_LINKS;
+
+function NavItem({
+  item,
+  mobile,
+  onClose,
+}: {
+  item: PublicNavItem;
+  mobile?: boolean;
+  onClose?: () => void;
+}) {
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const children = item.children;
+  const hasChildren = Boolean(children?.length);
+
+  if (hasChildren && children) {
+    return (
+      <div className="relative group">
+        <Link
+          href={item.href}
+          className={cn(
+            "rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:text-foreground",
+            mobile ? "block" : "inline-flex items-center gap-1",
+          )}
+        >
+          {item.label}
+          {!mobile && <ChevronRight className="h-3 w-3" />}
+        </Link>
+
+        {mobile ? (
+          children.map((child) => (
+            <Link
+              key={child.href}
+              href={child.href}
+              onClick={() => onClose?.()}
+              className="rounded-lg px-3 py-2 text-sm font-medium text-muted pl-4 transition-colors hover:text-foreground hover:bg-elevated block"
+            >
+              {child.label}
+            </Link>
+          ))
+        ) : (
+          <div
+            className={cn(
+              "absolute left-0 mt-1 w-48 rounded-lg border border-border bg-surface py-2 shadow-lg",
+              dropdownOpen ? "block" : "hidden",
+            )}
+            onMouseEnter={() => setDropdownOpen(true)}
+            onMouseLeave={() => setDropdownOpen(false)}
+          >
+            {children.map((child) => (
+              <Link
+                key={child.href}
+                href={child.href}
+                className="block rounded-lg px-3 py-2 text-sm text-muted transition-colors hover:bg-elevated hover:text-foreground"
+              >
+                {child.label}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <Link
+      href={item.href}
+      className={cn(
+        "rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:text-foreground",
+        mobile ? "block" : undefined,
+      )}
+      onClick={mobile ? onClose : undefined}
+    >
+      {item.label}
+    </Link>
+  );
+}
 
 export function Navbar() {
   const [open, setOpen] = useState(false);
@@ -35,13 +111,7 @@ export function Navbar() {
 
         <nav className="hidden items-center gap-1 lg:flex" aria-label="Primary">
           {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rounded-lg px-3 py-2 text-sm font-medium text-muted transition-colors hover:text-foreground"
-            >
-              {item.label}
-            </Link>
+            <NavItem key={item.href} item={item} />
           ))}
         </nav>
 
@@ -74,14 +144,7 @@ export function Navbar() {
       >
         <nav className="mx-auto flex max-w-7xl flex-col gap-1 px-4 py-4 sm:px-6" aria-label="Mobile">
           {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={() => setOpen(false)}
-              className="rounded-lg px-3 py-2.5 text-sm font-medium text-muted hover:bg-elevated hover:text-foreground"
-            >
-              {item.label}
-            </Link>
+            <NavItem key={item.href} item={item} mobile onClose={() => setOpen(false)} />
           ))}
           <div className="mt-3 flex flex-col gap-2">
             <ButtonLink href="/login" variant="secondary" onClick={() => setOpen(false)}>

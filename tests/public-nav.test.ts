@@ -84,13 +84,13 @@ describe("public navigation", () => {
     expect(dead.map((n) => n.id)).toEqual([]);
   });
 
-  it("header renders six links: Home is on the logo, not duplicated", () => {
-    expect(HEADER_LINKS).toHaveLength(7);
+  it("header renders five links: Home is on the logo, not duplicated", () => {
+    expect(HEADER_LINKS).toHaveLength(5);
     expect(HEADER_LINKS.some((n) => n.href === "/")).toBe(false);
   });
 
   it("footer columns cover every group exactly once", () => {
-    expect(FOOTER_PLATFORM).toHaveLength(7);
+    expect(FOOTER_PLATFORM).toHaveLength(5);
     expect(FOOTER_COMPANY).toHaveLength(6);
     expect(FOOTER_LEGAL).toHaveLength(4);
     const covered = [...FOOTER_PLATFORM, ...FOOTER_COMPANY, ...FOOTER_LEGAL].map(
